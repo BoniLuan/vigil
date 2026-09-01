@@ -12,6 +12,24 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const archiveMonitor = `-- name: ArchiveMonitor :one
+UPDATE monitors SET
+    enabled = false,
+    public = false,
+    archived_at = now(),
+    updated_at = now(),
+    version = version + 1
+WHERE id = $1 AND archived_at IS NULL
+RETURNING id
+`
+
+func (q *Queries) ArchiveMonitor(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, archiveMonitor, id)
+	var id_2 uuid.UUID
+	err := row.Scan(&id_2)
+	return id_2, err
+}
+
 const createMonitor = `-- name: CreateMonitor :one
 INSERT INTO monitors (
     id, name, slug, description, kind, url, http_method,
@@ -21,7 +39,7 @@ INSERT INTO monitors (
     $1, $2, $3, $4, $5, $6, $7,
     $8, $9, $10, $11, $12, $13, $14, $15
 )
-RETURNING id, name, slug, description, kind, url, http_method, expected_status_min, expected_status_max, interval_seconds, timeout_ms, failure_threshold, recovery_threshold, enabled, public, version, created_at, updated_at
+RETURNING id, name, slug, description, kind, url, http_method, expected_status_min, expected_status_max, interval_seconds, timeout_ms, failure_threshold, recovery_threshold, enabled, public, version, created_at, updated_at, archived_at
 `
 
 type CreateMonitorParams struct {
@@ -80,6 +98,7 @@ func (q *Queries) CreateMonitor(ctx context.Context, arg CreateMonitorParams) (M
 		&i.Version,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ArchivedAt,
 	)
 	return i, err
 }
@@ -87,7 +106,7 @@ func (q *Queries) CreateMonitor(ctx context.Context, arg CreateMonitorParams) (M
 const createMonitorState = `-- name: CreateMonitorState :one
 INSERT INTO monitor_states (monitor_id, state)
 VALUES ($1, $2)
-RETURNING monitor_id, state, updated_at
+RETURNING monitor_id, state, updated_at, last_check_result_id, last_checked_at, last_outcome, last_status_code, last_duration_ms, consecutive_failures, consecutive_successes
 `
 
 type CreateMonitorStateParams struct {
@@ -98,19 +117,19 @@ type CreateMonitorStateParams struct {
 func (q *Queries) CreateMonitorState(ctx context.Context, arg CreateMonitorStateParams) (MonitorState, error) {
 	row := q.db.QueryRow(ctx, createMonitorState, arg.MonitorID, arg.State)
 	var i MonitorState
-	err := row.Scan(&i.MonitorID, &i.State, &i.UpdatedAt)
+	err := row.Scan(
+		&i.MonitorID,
+		&i.State,
+		&i.UpdatedAt,
+		&i.LastCheckResultID,
+		&i.LastCheckedAt,
+		&i.LastOutcome,
+		&i.LastStatusCode,
+		&i.LastDurationMs,
+		&i.ConsecutiveFailures,
+		&i.ConsecutiveSuccesses,
+	)
 	return i, err
-}
-
-const deleteMonitor = `-- name: DeleteMonitor :one
-DELETE FROM monitors WHERE id = $1 RETURNING id
-`
-
-func (q *Queries) DeleteMonitor(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
-	row := q.db.QueryRow(ctx, deleteMonitor, id)
-	var id_2 uuid.UUID
-	err := row.Scan(&id_2)
-	return id_2, err
 }
 
 const getMonitor = `-- name: GetMonitor :one
@@ -118,7 +137,7 @@ SELECT
     m.id, m.name, m.slug, m.description, m.kind, m.url, m.http_method,
     m.expected_status_min, m.expected_status_max, m.interval_seconds,
     m.timeout_ms, m.failure_threshold, m.recovery_threshold, m.enabled,
-    m.public, m.version, m.created_at, m.updated_at,
+    m.public, m.version, m.created_at, m.updated_at, m.archived_at,
     s.state, s.updated_at AS state_updated_at
 FROM monitors m
 JOIN monitor_states s ON s.monitor_id = m.id
@@ -144,6 +163,7 @@ type GetMonitorRow struct {
 	Version           int64              `json:"version"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	ArchivedAt        pgtype.Timestamptz `json:"archived_at"`
 	State             string             `json:"state"`
 	StateUpdatedAt    pgtype.Timestamptz `json:"state_updated_at"`
 }
@@ -170,6 +190,7 @@ func (q *Queries) GetMonitor(ctx context.Context, id uuid.UUID) (GetMonitorRow, 
 		&i.Version,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ArchivedAt,
 		&i.State,
 		&i.StateUpdatedAt,
 	)
@@ -181,10 +202,11 @@ SELECT
     m.id, m.name, m.slug, m.description, m.kind, m.url, m.http_method,
     m.expected_status_min, m.expected_status_max, m.interval_seconds,
     m.timeout_ms, m.failure_threshold, m.recovery_threshold, m.enabled,
-    m.public, m.version, m.created_at, m.updated_at,
+    m.public, m.version, m.created_at, m.updated_at, m.archived_at,
     s.state, s.updated_at AS state_updated_at
 FROM monitors m
 JOIN monitor_states s ON s.monitor_id = m.id
+WHERE m.archived_at IS NULL
 ORDER BY m.created_at DESC, m.id DESC
 LIMIT $1 OFFSET $2
 `
@@ -213,6 +235,7 @@ type ListMonitorsRow struct {
 	Version           int64              `json:"version"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	ArchivedAt        pgtype.Timestamptz `json:"archived_at"`
 	State             string             `json:"state"`
 	StateUpdatedAt    pgtype.Timestamptz `json:"state_updated_at"`
 }
@@ -245,6 +268,7 @@ func (q *Queries) ListMonitors(ctx context.Context, arg ListMonitorsParams) ([]L
 			&i.Version,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ArchivedAt,
 			&i.State,
 			&i.StateUpdatedAt,
 		); err != nil {
@@ -259,14 +283,19 @@ func (q *Queries) ListMonitors(ctx context.Context, arg ListMonitorsParams) ([]L
 }
 
 const lockMonitor = `-- name: LockMonitor :one
-SELECT id FROM monitors WHERE id = $1 FOR UPDATE
+SELECT id, archived_at FROM monitors WHERE id = $1 FOR UPDATE
 `
 
-func (q *Queries) LockMonitor(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+type LockMonitorRow struct {
+	ID         uuid.UUID          `json:"id"`
+	ArchivedAt pgtype.Timestamptz `json:"archived_at"`
+}
+
+func (q *Queries) LockMonitor(ctx context.Context, id uuid.UUID) (LockMonitorRow, error) {
 	row := q.db.QueryRow(ctx, lockMonitor, id)
-	var id_2 uuid.UUID
-	err := row.Scan(&id_2)
-	return id_2, err
+	var i LockMonitorRow
+	err := row.Scan(&i.ID, &i.ArchivedAt)
+	return i, err
 }
 
 const setMonitorEnabled = `-- name: SetMonitorEnabled :one
@@ -275,7 +304,7 @@ UPDATE monitors SET
     updated_at = now(),
     version = version + 1
 WHERE id = $1
-RETURNING id, name, slug, description, kind, url, http_method, expected_status_min, expected_status_max, interval_seconds, timeout_ms, failure_threshold, recovery_threshold, enabled, public, version, created_at, updated_at
+RETURNING id, name, slug, description, kind, url, http_method, expected_status_min, expected_status_max, interval_seconds, timeout_ms, failure_threshold, recovery_threshold, enabled, public, version, created_at, updated_at, archived_at
 `
 
 type SetMonitorEnabledParams struct {
@@ -305,16 +334,19 @@ func (q *Queries) SetMonitorEnabled(ctx context.Context, arg SetMonitorEnabledPa
 		&i.Version,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ArchivedAt,
 	)
 	return i, err
 }
 
 const setMonitorState = `-- name: SetMonitorState :one
 UPDATE monitor_states SET
-    state = $2,
+    state = $2::varchar,
+    consecutive_failures = CASE WHEN $2::varchar = 'pending' THEN 0 ELSE consecutive_failures END,
+    consecutive_successes = CASE WHEN $2::varchar = 'pending' THEN 0 ELSE consecutive_successes END,
     updated_at = now()
 WHERE monitor_id = $1
-RETURNING monitor_id, state, updated_at
+RETURNING monitor_id, state, updated_at, last_check_result_id, last_checked_at, last_outcome, last_status_code, last_duration_ms, consecutive_failures, consecutive_successes
 `
 
 type SetMonitorStateParams struct {
@@ -325,7 +357,18 @@ type SetMonitorStateParams struct {
 func (q *Queries) SetMonitorState(ctx context.Context, arg SetMonitorStateParams) (MonitorState, error) {
 	row := q.db.QueryRow(ctx, setMonitorState, arg.MonitorID, arg.State)
 	var i MonitorState
-	err := row.Scan(&i.MonitorID, &i.State, &i.UpdatedAt)
+	err := row.Scan(
+		&i.MonitorID,
+		&i.State,
+		&i.UpdatedAt,
+		&i.LastCheckResultID,
+		&i.LastCheckedAt,
+		&i.LastOutcome,
+		&i.LastStatusCode,
+		&i.LastDurationMs,
+		&i.ConsecutiveFailures,
+		&i.ConsecutiveSuccesses,
+	)
 	return i, err
 }
 
@@ -345,8 +388,8 @@ UPDATE monitors SET
     public = $13,
     updated_at = now(),
     version = version + 1
-WHERE id = $1 AND version = $14
-RETURNING id, name, slug, description, kind, url, http_method, expected_status_min, expected_status_max, interval_seconds, timeout_ms, failure_threshold, recovery_threshold, enabled, public, version, created_at, updated_at
+WHERE id = $1 AND version = $14 AND archived_at IS NULL
+RETURNING id, name, slug, description, kind, url, http_method, expected_status_min, expected_status_max, interval_seconds, timeout_ms, failure_threshold, recovery_threshold, enabled, public, version, created_at, updated_at, archived_at
 `
 
 type UpdateMonitorParams struct {
@@ -403,6 +446,7 @@ func (q *Queries) UpdateMonitor(ctx context.Context, arg UpdateMonitorParams) (M
 		&i.Version,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ArchivedAt,
 	)
 	return i, err
 }

@@ -54,6 +54,9 @@ func (s *Service) Update(ctx context.Context, id uuid.UUID, patch PatchInput) (M
 	if err != nil {
 		return Monitor{}, err
 	}
+	if current.ArchivedAt != nil {
+		return Monitor{}, ErrArchived
+	}
 	applyPatch(&current, patch)
 	if err := Validate(current); err != nil {
 		return Monitor{}, err
@@ -70,7 +73,7 @@ func (s *Service) Resume(ctx context.Context, id uuid.UUID) (Monitor, error) {
 }
 
 func (s *Service) Delete(ctx context.Context, id uuid.UUID) error {
-	return s.store.Delete(ctx, id)
+	return s.store.Archive(ctx, id)
 }
 
 func applyPatch(value *Monitor, patch PatchInput) {

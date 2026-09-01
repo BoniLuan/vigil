@@ -71,26 +71,27 @@ type patchRequest struct {
 }
 
 type monitorResponse struct {
-	ID                uuid.UUID `json:"id"`
-	Name              string    `json:"name"`
-	Slug              string    `json:"slug"`
-	Description       *string   `json:"description"`
-	Kind              string    `json:"kind"`
-	URL               string    `json:"url"`
-	HTTPMethod        string    `json:"http_method"`
-	ExpectedStatusMin int       `json:"expected_status_min"`
-	ExpectedStatusMax int       `json:"expected_status_max"`
-	IntervalSeconds   int       `json:"interval_seconds"`
-	TimeoutMS         int       `json:"timeout_ms"`
-	FailureThreshold  int       `json:"failure_threshold"`
-	RecoveryThreshold int       `json:"recovery_threshold"`
-	Enabled           bool      `json:"enabled"`
-	Public            bool      `json:"public"`
-	Version           int64     `json:"version"`
-	State             string    `json:"state"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
-	StateUpdatedAt    time.Time `json:"state_updated_at"`
+	ID                uuid.UUID  `json:"id"`
+	Name              string     `json:"name"`
+	Slug              string     `json:"slug"`
+	Description       *string    `json:"description"`
+	Kind              string     `json:"kind"`
+	URL               string     `json:"url"`
+	HTTPMethod        string     `json:"http_method"`
+	ExpectedStatusMin int        `json:"expected_status_min"`
+	ExpectedStatusMax int        `json:"expected_status_max"`
+	IntervalSeconds   int        `json:"interval_seconds"`
+	TimeoutMS         int        `json:"timeout_ms"`
+	FailureThreshold  int        `json:"failure_threshold"`
+	RecoveryThreshold int        `json:"recovery_threshold"`
+	Enabled           bool       `json:"enabled"`
+	Public            bool       `json:"public"`
+	Version           int64      `json:"version"`
+	State             string     `json:"state"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
+	StateUpdatedAt    time.Time  `json:"state_updated_at"`
+	ArchivedAt        *time.Time `json:"archived_at"`
 }
 
 type problem struct {
@@ -259,6 +260,8 @@ func (h *Handler) writeServiceError(w http.ResponseWriter, err error) {
 		writeProblem(w, http.StatusNotFound, "not-found", "Monitor not found", err.Error(), nil)
 	case errors.Is(err, monitor.ErrSlugConflict):
 		writeProblem(w, http.StatusConflict, "slug-conflict", "Slug already exists", err.Error(), map[string]string{"slug": "must be unique"})
+	case errors.Is(err, monitor.ErrArchived):
+		writeProblem(w, http.StatusConflict, "monitor-archived", "Monitor archived", err.Error(), nil)
 	case errors.Is(err, monitor.ErrWriteConflict):
 		writeProblem(w, http.StatusConflict, "write-conflict", "Concurrent modification", err.Error(), nil)
 	default:
@@ -315,7 +318,7 @@ func response(value monitor.Monitor) monitorResponse {
 		IntervalSeconds: int(value.Interval.Seconds()), TimeoutMS: int(value.Timeout.Milliseconds()),
 		FailureThreshold: value.FailureThreshold, RecoveryThreshold: value.RecoveryThreshold,
 		Enabled: value.Enabled, Public: value.Public, Version: value.Version, State: value.State,
-		CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt, StateUpdatedAt: value.StateUpdatedAt,
+		CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt, StateUpdatedAt: value.StateUpdatedAt, ArchivedAt: value.ArchivedAt,
 	}
 }
 

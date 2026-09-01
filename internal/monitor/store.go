@@ -102,10 +102,14 @@ func (s *Store) setOperationalState(ctx context.Context, id uuid.UUID, enabled b
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	q := s.queries.WithTx(tx)
-	if _, err := q.LockMonitor(ctx, id); errors.Is(err, pgx.ErrNoRows) {
+	locked, err := q.LockMonitor(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
 		return Monitor{}, ErrNotFound
 	} else if err != nil {
 		return Monitor{}, fmt.Errorf("lock monitor: %w", err)
+	}
+	if locked.ArchivedAt.Valid {
+		return Monitor{}, ErrArchived
 	}
 	current, err := q.GetMonitor(ctx, id)
 	if err != nil {
@@ -131,11 +135,28 @@ func (s *Store) setOperationalState(ctx context.Context, id uuid.UUID, enabled b
 	return monitorFromGet(row), nil
 }
 
-func (s *Store) Delete(ctx context.Context, id uuid.UUID) error {
-	if _, err := s.queries.DeleteMonitor(ctx, id); errors.Is(err, pgx.ErrNoRows) {
+func (s *Store) Archive(ctx context.Context, id uuid.UUID) error {
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin archive monitor transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := s.queries.WithTx(tx)
+	locked, err := q.LockMonitor(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && locked.ArchivedAt.Valid) {
 		return ErrNotFound
-	} else if err != nil {
-		return fmt.Errorf("delete monitor: %w", err)
+	}
+	if err != nil {
+		return fmt.Errorf("lock monitor for archive: %w", err)
+	}
+	if _, err := q.ArchiveMonitor(ctx, id); err != nil {
+		return fmt.Errorf("archive monitor: %w", err)
+	}
+	if _, err := q.SetMonitorState(ctx, generated.SetMonitorStateParams{MonitorID: id, State: StatePaused}); err != nil {
+		return fmt.Errorf("pause archived monitor: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit archive monitor: %w", err)
 	}
 	return nil
 }
@@ -162,6 +183,14 @@ func stringPointer(value pgtype.Text) *string {
 	return &value.String
 }
 
+func timestampPointer(value pgtype.Timestamptz) *time.Time {
+	if !value.Valid {
+		return nil
+	}
+	result := value.Time.UTC()
+	return &result
+}
+
 func timestamp(value pgtype.Timestamptz) time.Time {
 	if !value.Valid {
 		return time.Time{}
@@ -179,7 +208,7 @@ func monitorFromGet(row generated.GetMonitorRow) Monitor {
 		FailureThreshold: int(row.FailureThreshold), RecoveryThreshold: int(row.RecoveryThreshold),
 		Enabled: row.Enabled, Public: row.Public, Version: row.Version, State: row.State,
 		CreatedAt: timestamp(row.CreatedAt), UpdatedAt: timestamp(row.UpdatedAt),
-		StateUpdatedAt: timestamp(row.StateUpdatedAt),
+		StateUpdatedAt: timestamp(row.StateUpdatedAt), ArchivedAt: timestampPointer(row.ArchivedAt),
 	}
 }
 
@@ -193,6 +222,6 @@ func monitorFromList(row generated.ListMonitorsRow) Monitor {
 		FailureThreshold: int(row.FailureThreshold), RecoveryThreshold: int(row.RecoveryThreshold),
 		Enabled: row.Enabled, Public: row.Public, Version: row.Version, State: row.State,
 		CreatedAt: timestamp(row.CreatedAt), UpdatedAt: timestamp(row.UpdatedAt),
-		StateUpdatedAt: timestamp(row.StateUpdatedAt),
+		StateUpdatedAt: timestamp(row.StateUpdatedAt), ArchivedAt: timestampPointer(row.ArchivedAt),
 	}
 }

@@ -12,6 +12,7 @@ to make history appear different.
 | [0004](0004-secure-outbound-http-policy.md) | Secure outbound HTTP policy | Accepted |
 | [0005](0005-single-vps-deployment-boundaries.md) | Single-VPS deployment boundaries | Accepted |
 | [0006](0006-v0.1-state-retention-and-uptime-semantics.md) | v0.1 semantics | Accepted |
-| [0007](0007-hard-delete-monitors-before-history.md) | Hard-delete monitors before history | Accepted |
+| [0007](0007-hard-delete-monitors-before-history.md) | Hard-delete monitors before history | Superseded |
 | [0008](0008-ignore-environment-proxies-for-checks.md) | Ignore environment proxies for checks | Accepted |
 | [0009](0009-secure-redirect-handling.md) | Revalidate every HTTP redirect destination | Accepted |
+| [0010](0010-archive-monitors-with-history.md) | Archive monitors with check history | Accepted |

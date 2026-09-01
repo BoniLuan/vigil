@@ -176,8 +176,9 @@ history normalized and derive most aggregates initially.
 - `interval_seconds`, `timeout_ms`
 - `failure_threshold`, `recovery_threshold`
 - `enabled`, `public`
-- `next_check_at`, `lease_owner`, `lease_expires_at`
-- `created_at`, `updated_at`, optional `deleted_at`
+- `created_at`, `updated_at`, optional `archived_at`
+
+Normal API deletion archives monitors; it disables scheduling and public visibility while preserving configuration and check history.
 
 Validate a safe interval/timeout relationship. The initial worker should support
 GET/HEAD only and should not support arbitrary request bodies or secrets until
@@ -189,7 +190,7 @@ their security model is designed.
 - `outcome` (`success`, `http_failure`, `timeout`, `dns_error`, `tls_error`,
   `connection_error`, `internal_error`)
 - `status_code`, `error_code`, bounded/sanitized `error_message`
-- `resolved_ip` where useful, `tls_expires_at`, `worker_id`
+- `dialed_ip` where available, `tls_expires_at`
 
 Indexes should support `(monitor_id, started_at desc)` and time-based retention.
 Do not store response bodies. Monthly partitioning is an evolution step only
@@ -197,9 +198,7 @@ after volume warrants it.
 
 #### `monitor_states`
 
-One row per monitor containing the current projection: last result/time,
-consecutive successes/failures, effective status (`pending`, `up`, `down`,
-`degraded`, `paused`), active incident ID, and `updated_at`. This makes dashboard
+One row per monitor containing the current projection: last result/time/outcome/status/duration, consecutive successes/failures, effective status (`pending`, `up`, `down`, `paused`), and `updated_at`. This makes dashboard
 reads cheap while `check_results` remains the audit history.
 
 #### `incidents`

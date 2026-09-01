@@ -12,7 +12,7 @@ import (
 	"github.com/pressly/goose/v3"
 )
 
-func TestMigrationsAreCurrent(t *testing.T) {
+func TestMigrationsFromBaselineAndEmptyDatabase(t *testing.T) {
 	databaseURL := os.Getenv("VIGIL_TEST_DATABASE_URL")
 	if databaseURL == "" {
 		t.Skip("VIGIL_TEST_DATABASE_URL is not set; skipping migration integration test")
@@ -26,21 +26,82 @@ func TestMigrationsAreCurrent(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	if err := db.PingContext(context.Background()); err != nil {
+	ctx := context.Background()
+	if err := db.PingContext(ctx); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := db.ExecContext(ctx, "SELECT pg_advisory_lock(86744511)"); err != nil {
+		t.Fatalf("acquire migration test lock: %v", err)
+	}
+	t.Cleanup(func() { _, _ = db.ExecContext(context.Background(), "SELECT pg_advisory_unlock(86744511)") })
 	goose.SetBaseFS(Files)
 	if err := goose.SetDialect("postgres"); err != nil {
 		t.Fatal(err)
 	}
-	if err := goose.UpContext(context.Background(), db, "."); err != nil {
-		t.Fatalf("goose up: %v", err)
+	if err := goose.DownToContext(ctx, db, ".", 0); err != nil {
+		t.Fatalf("reset test database: %v", err)
 	}
-	version, err := goose.GetDBVersionContext(context.Background(), db)
+	t.Cleanup(func() { _ = goose.UpContext(context.Background(), db, ".") })
+
+	if err := goose.UpToContext(ctx, db, ".", 2); err != nil {
+		t.Fatalf("migrate to monitor baseline: %v", err)
+	}
+	assertVersion(t, ctx, db, 2)
+	if err := goose.UpContext(ctx, db, "."); err != nil {
+		t.Fatalf("baseline to latest: %v", err)
+	}
+	assertLatestSchema(t, ctx, db)
+
+	if err := goose.DownToContext(ctx, db, ".", 0); err != nil {
+		t.Fatalf("reset before empty migration: %v", err)
+	}
+	if err := goose.UpContext(ctx, db, "."); err != nil {
+		t.Fatalf("empty database to latest: %v", err)
+	}
+	assertLatestSchema(t, ctx, db)
+}
+
+func assertLatestSchema(t *testing.T, ctx context.Context, db *sql.DB) {
+	t.Helper()
+	assertVersion(t, ctx, db, 3)
+	var table, historyIndex, retentionIndex sql.NullString
+	if err := db.QueryRowContext(ctx, `SELECT to_regclass('check_results'),
+            to_regclass('check_results_monitor_started_idx'), to_regclass('check_results_started_idx')`).
+		Scan(&table, &historyIndex, &retentionIndex); err != nil {
+		t.Fatal(err)
+	}
+	if !table.Valid || !historyIndex.Valid || !retentionIndex.Valid {
+		t.Fatalf("missing schema objects: table=%v history_index=%v retention_index=%v", table, historyIndex, retentionIndex)
+	}
+	var columns int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM information_schema.columns
+        WHERE table_schema = 'public' AND ((table_name = 'monitors' AND column_name = 'archived_at') OR
+        (table_name = 'monitor_states' AND column_name IN ('last_check_result_id', 'last_checked_at',
+        'last_outcome', 'last_status_code', 'last_duration_ms', 'consecutive_failures', 'consecutive_successes')))`).Scan(&columns); err != nil {
+		t.Fatal(err)
+	}
+	if columns != 8 {
+		t.Fatalf("new schema column count = %d, want 8", columns)
+	}
+	var constraints int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM pg_constraint WHERE conname IN
+        ('check_results_time_order', 'check_results_error_pair', 'check_results_outcome_error',
+        'check_results_http_failure_status', 'check_results_monitor_id_fkey',
+        'check_results_error_code', 'check_results_error_description_bytes')`).Scan(&constraints); err != nil {
+		t.Fatal(err)
+	}
+	if constraints != 7 {
+		t.Fatalf("check_results constraint count = %d, want 7", constraints)
+	}
+}
+
+func assertVersion(t *testing.T, ctx context.Context, db *sql.DB, expected int64) {
+	t.Helper()
+	version, err := goose.GetDBVersionContext(ctx, db)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != 2 {
-		t.Fatalf("migration version = %d, want 2", version)
+	if version != expected {
+		t.Fatalf("migration version = %d, want %d", version, expected)
 	}
 }

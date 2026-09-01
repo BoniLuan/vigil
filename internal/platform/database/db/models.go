@@ -5,9 +5,26 @@
 package db
 
 import (
+	"net/netip"
+
 	uuid "github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+type CheckResult struct {
+	ID               uuid.UUID          `json:"id"`
+	MonitorID        uuid.UUID          `json:"monitor_id"`
+	StartedAt        pgtype.Timestamptz `json:"started_at"`
+	FinishedAt       pgtype.Timestamptz `json:"finished_at"`
+	DurationMs       int64              `json:"duration_ms"`
+	Outcome          string             `json:"outcome"`
+	StatusCode       pgtype.Int2        `json:"status_code"`
+	ErrorCode        pgtype.Text        `json:"error_code"`
+	ErrorDescription pgtype.Text        `json:"error_description"`
+	DialedIp         *netip.Addr        `json:"dialed_ip"`
+	TlsExpiresAt     pgtype.Timestamptz `json:"tls_expires_at"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+}
 
 type Monitor struct {
 	ID                uuid.UUID          `json:"id"`
@@ -28,10 +45,18 @@ type Monitor struct {
 	Version           int64              `json:"version"`
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	ArchivedAt        pgtype.Timestamptz `json:"archived_at"`
 }
 
 type MonitorState struct {
-	MonitorID uuid.UUID          `json:"monitor_id"`
-	State     string             `json:"state"`
-	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	MonitorID            uuid.UUID          `json:"monitor_id"`
+	State                string             `json:"state"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	LastCheckResultID    pgtype.UUID        `json:"last_check_result_id"`
+	LastCheckedAt        pgtype.Timestamptz `json:"last_checked_at"`
+	LastOutcome          pgtype.Text        `json:"last_outcome"`
+	LastStatusCode       pgtype.Int2        `json:"last_status_code"`
+	LastDurationMs       pgtype.Int8        `json:"last_duration_ms"`
+	ConsecutiveFailures  int64              `json:"consecutive_failures"`
+	ConsecutiveSuccesses int64              `json:"consecutive_successes"`
 }

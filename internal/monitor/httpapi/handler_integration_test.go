@@ -85,6 +85,19 @@ func TestMonitorAPI(t *testing.T) {
 	if deleted.Code != http.StatusNoContent || deleted.Body.Len() != 0 {
 		t.Fatalf("delete status = %d, body = %s", deleted.Code, deleted.Body.String())
 	}
+	archived := perform(t, mux, http.MethodGet, "/api/v1/monitors/"+id, "")
+	decodeResponse(t, archived, &value)
+	if archived.Code != http.StatusOK || value.ArchivedAt == nil || value.Enabled || value.Public || value.State != monitor.StatePaused {
+		t.Fatalf("archived get status = %d, response = %+v", archived.Code, value)
+	}
+	activeAfterArchive := perform(t, mux, http.MethodGet, "/api/v1/monitors?limit=10", "")
+	if strings.Contains(activeAfterArchive.Body.String(), "finpulse-api") {
+		t.Fatalf("archived monitor remained in active list: %s", activeAfterArchive.Body.String())
+	}
+	resumeArchived := perform(t, mux, http.MethodPost, "/api/v1/monitors/"+id+"/resume", "")
+	if resumeArchived.Code != http.StatusConflict {
+		t.Fatalf("archived resume status = %d, body = %s", resumeArchived.Code, resumeArchived.Body.String())
+	}
 	deletedAgain := perform(t, mux, http.MethodDelete, "/api/v1/monitors/"+id, "")
 	if deletedAgain.Code != http.StatusNotFound {
 		t.Fatalf("second delete status = %d", deletedAgain.Code)

@@ -19,7 +19,7 @@ SELECT
     m.id, m.name, m.slug, m.description, m.kind, m.url, m.http_method,
     m.expected_status_min, m.expected_status_max, m.interval_seconds,
     m.timeout_ms, m.failure_threshold, m.recovery_threshold, m.enabled,
-    m.public, m.version, m.created_at, m.updated_at,
+    m.public, m.version, m.created_at, m.updated_at, m.archived_at,
     s.state, s.updated_at AS state_updated_at
 FROM monitors m
 JOIN monitor_states s ON s.monitor_id = m.id
@@ -30,10 +30,11 @@ SELECT
     m.id, m.name, m.slug, m.description, m.kind, m.url, m.http_method,
     m.expected_status_min, m.expected_status_max, m.interval_seconds,
     m.timeout_ms, m.failure_threshold, m.recovery_threshold, m.enabled,
-    m.public, m.version, m.created_at, m.updated_at,
+    m.public, m.version, m.created_at, m.updated_at, m.archived_at,
     s.state, s.updated_at AS state_updated_at
 FROM monitors m
 JOIN monitor_states s ON s.monitor_id = m.id
+WHERE m.archived_at IS NULL
 ORDER BY m.created_at DESC, m.id DESC
 LIMIT $1 OFFSET $2;
 
@@ -53,7 +54,7 @@ UPDATE monitors SET
     public = $13,
     updated_at = now(),
     version = version + 1
-WHERE id = $1 AND version = $14
+WHERE id = $1 AND version = $14 AND archived_at IS NULL
 RETURNING *;
 
 -- name: SetMonitorEnabled :one
@@ -66,13 +67,22 @@ RETURNING *;
 
 -- name: SetMonitorState :one
 UPDATE monitor_states SET
-    state = $2,
+    state = sqlc.arg(state)::varchar,
+    consecutive_failures = CASE WHEN sqlc.arg(state)::varchar = 'pending' THEN 0 ELSE consecutive_failures END,
+    consecutive_successes = CASE WHEN sqlc.arg(state)::varchar = 'pending' THEN 0 ELSE consecutive_successes END,
     updated_at = now()
 WHERE monitor_id = $1
 RETURNING *;
 
 -- name: LockMonitor :one
-SELECT id FROM monitors WHERE id = $1 FOR UPDATE;
+SELECT id, archived_at FROM monitors WHERE id = $1 FOR UPDATE;
 
--- name: DeleteMonitor :one
-DELETE FROM monitors WHERE id = $1 RETURNING id;
+-- name: ArchiveMonitor :one
+UPDATE monitors SET
+    enabled = false,
+    public = false,
+    archived_at = now(),
+    updated_at = now(),
+    version = version + 1
+WHERE id = $1 AND archived_at IS NULL
+RETURNING id;

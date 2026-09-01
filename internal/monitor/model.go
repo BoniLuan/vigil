@@ -27,6 +27,7 @@ var (
 	ErrNotFound      = errors.New("monitor not found")
 	ErrSlugConflict  = errors.New("monitor slug already exists")
 	ErrWriteConflict = errors.New("monitor was concurrently modified")
+	ErrArchived      = errors.New("monitor is archived")
 )
 
 type Monitor struct {
@@ -50,6 +51,7 @@ type Monitor struct {
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 	StateUpdatedAt    time.Time
+	ArchivedAt        *time.Time
 }
 
 type CreateInput struct {

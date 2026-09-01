@@ -1,6 +1,8 @@
 # ADR 0007: Hard-delete monitors before historical data exists
 
-- Status: Accepted
+Superseded by [ADR 0010](0010-archive-monitors-with-history.md).
+
+- Status: Superseded
 - Date: 2026-09-01
 
 ## Context

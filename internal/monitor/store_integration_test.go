@@ -55,11 +55,12 @@ func TestMonitorPersistenceLifecycle(t *testing.T) {
 	if err := service.Delete(ctx, created.ID); err != nil {
 		t.Fatalf("Delete() error = %v", err)
 	}
-	if _, err := service.Get(ctx, created.ID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("Get() after delete error = %v, want ErrNotFound", err)
+	archived, err := service.Get(ctx, created.ID)
+	if err != nil || archived.ArchivedAt == nil || archived.Enabled || archived.State != StatePaused {
+		t.Fatalf("Get() after archive = %+v, %v", archived, err)
 	}
-	if err := pool.QueryRow(ctx, "SELECT count(*) FROM monitor_states WHERE monitor_id = $1", created.ID).Scan(&stateCount); err != nil || stateCount != 0 {
-		t.Fatalf("state rows after delete = %d, error = %v", stateCount, err)
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM monitor_states WHERE monitor_id = $1", created.ID).Scan(&stateCount); err != nil || stateCount != 1 {
+		t.Fatalf("state rows after archive = %d, error = %v", stateCount, err)
 	}
 	if err := service.Delete(ctx, created.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("second Delete() error = %v, want ErrNotFound", err)
