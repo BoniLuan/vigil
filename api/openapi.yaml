@@ -1,0 +1,233 @@
+openapi: 3.1.0
+info:
+  title: Vigil API
+  version: 0.1.0
+  description: Administration API implemented by the current Vigil monitor-model milestone.
+servers:
+  - url: /api/v1
+security:
+  - basicAuth: []
+paths:
+  /monitors:
+    post:
+      operationId: createMonitor
+      summary: Create an HTTP monitor
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMonitor'
+      responses:
+        '201':
+          description: Monitor created. The Location header identifies it.
+          headers:
+            Location:
+              required: true
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Monitor' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    get:
+      operationId: listMonitors
+      summary: List monitors
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0, maximum: 1000000, default: 0 }
+      responses:
+        '200':
+          description: Paginated monitor list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, limit, offset]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Monitor' }
+                  limit: { type: integer }
+                  offset: { type: integer }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /monitors/{id}:
+    parameters:
+      - $ref: '#/components/parameters/MonitorID'
+    get:
+      operationId: getMonitor
+      summary: Get one monitor
+      responses:
+        '200':
+          description: Monitor
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Monitor' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      operationId: updateMonitor
+      summary: Partially update monitor configuration
+      description: Runtime state and enabled status cannot be changed here. Use pause or resume.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PatchMonitor' }
+      responses:
+        '200':
+          description: Updated monitor
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Monitor' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      operationId: deleteMonitor
+      summary: Permanently delete a monitor
+      description: Hard-deletes configuration and cascades its current-state row.
+      responses:
+        '204': { description: Monitor deleted }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /monitors/{id}/pause:
+    parameters:
+      - $ref: '#/components/parameters/MonitorID'
+    post:
+      operationId: pauseMonitor
+      summary: Pause a monitor
+      responses:
+        '200':
+          description: Paused monitor
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Monitor' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /monitors/{id}/resume:
+    parameters:
+      - $ref: '#/components/parameters/MonitorID'
+    post:
+      operationId: resumeMonitor
+      summary: Resume a monitor in pending state
+      responses:
+        '200':
+          description: Resumed monitor awaiting a future check
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Monitor' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+components:
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+      description: Enforced by the Nginx administration-host boundary in v0.1.
+  parameters:
+    MonitorID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  responses:
+    BadRequest:
+      description: Invalid JSON, identifier, query, or monitor configuration
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Monitor does not exist
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Conflict:
+      description: Slug conflict or concurrent update
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+  schemas:
+    CreateMonitor:
+      type: object
+      additionalProperties: false
+      required: [name, url]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        slug:
+          type: string
+          maxLength: 100
+          description: Normalized by Vigil; defaults to a slug generated from name.
+        description: { type: [string, 'null'], maxLength: 2000 }
+        kind: { type: string, enum: [http], default: http }
+        url: { type: string, format: uri }
+        http_method: { type: string, enum: [GET, HEAD], default: GET }
+        expected_status_min: { type: integer, minimum: 100, maximum: 599, default: 200 }
+        expected_status_max: { type: integer, minimum: 100, maximum: 599, default: 200 }
+        interval_seconds: { type: integer, minimum: 10, maximum: 86400, default: 60 }
+        timeout_ms: { type: integer, minimum: 100, maximum: 30000, default: 2000 }
+        failure_threshold: { type: integer, minimum: 1, maximum: 100, default: 3 }
+        recovery_threshold: { type: integer, minimum: 1, maximum: 100, default: 1 }
+        enabled: { type: boolean, default: true }
+        public: { type: boolean, default: false }
+    PatchMonitor:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        slug: { type: string, maxLength: 100 }
+        description: { type: [string, 'null'], maxLength: 2000 }
+        url: { type: string, format: uri }
+        http_method: { type: string, enum: [GET, HEAD] }
+        expected_status_min: { type: integer, minimum: 100, maximum: 599 }
+        expected_status_max: { type: integer, minimum: 100, maximum: 599 }
+        interval_seconds: { type: integer, minimum: 10, maximum: 86400 }
+        timeout_ms: { type: integer, minimum: 100, maximum: 30000 }
+        failure_threshold: { type: integer, minimum: 1, maximum: 100 }
+        recovery_threshold: { type: integer, minimum: 1, maximum: 100 }
+        public: { type: boolean }
+    Monitor:
+      allOf:
+        - $ref: '#/components/schemas/CreateMonitor'
+        - type: object
+          required:
+            - id
+            - slug
+            - kind
+            - http_method
+            - expected_status_min
+            - expected_status_max
+            - interval_seconds
+            - timeout_ms
+            - failure_threshold
+            - recovery_threshold
+            - enabled
+            - public
+            - version
+            - state
+            - created_at
+            - updated_at
+            - state_updated_at
+          properties:
+            id: { type: string, format: uuid, readOnly: true }
+            version: { type: integer, format: int64, minimum: 1, readOnly: true }
+            state: { type: string, enum: [pending, up, down, paused], readOnly: true }
+            created_at: { type: string, format: date-time, readOnly: true }
+            updated_at: { type: string, format: date-time, readOnly: true }
+            state_updated_at: { type: string, format: date-time, readOnly: true }
+    Problem:
+      type: object
+      required: [type, title, status]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        fields:
+          type: object
+          additionalProperties: { type: string }

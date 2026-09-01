@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/BoniLuan/vigil/internal/monitor"
+	monitorapi "github.com/BoniLuan/vigil/internal/monitor/httpapi"
 	"github.com/BoniLuan/vigil/internal/platform/config"
 	"github.com/BoniLuan/vigil/internal/platform/database"
 )
@@ -23,6 +25,8 @@ func API(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	var ready atomic.Bool
 	ready.Store(true)
 	mux := http.NewServeMux()
+	monitorService := monitor.NewService(monitor.NewStore(pool))
+	monitorapi.New(monitorService, logger).Register(mux)
 	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusOK)

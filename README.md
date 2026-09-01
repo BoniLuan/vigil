@@ -56,4 +56,16 @@ make lint
 make build
 ```
 
-Only `/livez` and `/readyz` exist at this stage. Monitor CRUD, checking,
+The monitor-model milestone now implements HTTP monitor configuration, current
+state, and administration endpoints under `/api/v1/monitors`. The actual HTTP
+checker, scheduling, check history, incidents, and notifications remain
+intentionally unimplemented. See [`api/openapi.yaml`](api/openapi.yaml) for the
+current API contract.
+
+PostgreSQL integration tests require an isolated database whose name ends in
+`_test`:
+
+```bash
+VIGIL_TEST_DATABASE_URL='postgres://vigil:vigil@localhost:5432/vigil_test?sslmode=disable' \
+  make test-integration
+```
