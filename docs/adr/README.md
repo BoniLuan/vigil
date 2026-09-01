@@ -13,3 +13,4 @@ to make history appear different.
 | [0005](0005-single-vps-deployment-boundaries.md) | Single-VPS deployment boundaries | Accepted |
 | [0006](0006-v0.1-state-retention-and-uptime-semantics.md) | v0.1 semantics | Accepted |
 | [0007](0007-hard-delete-monitors-before-history.md) | Hard-delete monitors before history | Accepted |
+| [0008](0008-ignore-environment-proxies-for-checks.md) | Ignore environment proxies for checks | Accepted |
