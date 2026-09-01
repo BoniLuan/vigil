@@ -54,3 +54,33 @@ The User-Agent remains `Vigil/0.1`. Build version metadata currently lives in
 the CLI package; wiring it into the checker before the worker constructs an
 executor would add coupling without operational value. A future constructor
 option can inject `Vigil/<version>` when checker composition is implemented.
+
+## Durable result application
+
+`internal/checkresult.Service.ApplyResult` is the boundary from the pure checker
+to PostgreSQL. Network execution finishes before a short transaction locks the
+monitor and its projection, inserts one `check_results` row, updates
+`monitor_states`, and commits. The scheduler milestone will add a durable
+execution identity; this milestone deliberately does not invent one before
+claim semantics exist.
+
+Projection transitions are deterministic:
+
+| Current | Check | Before threshold | At threshold |
+|---|---|---|---|
+| `pending` | success | — | `up` immediately |
+| `pending` | failure | remain `pending` | `down` at `failure_threshold` |
+| `up` | success | remain `up` | remain `up` |
+| `up` | failure | remain `up` | `down` at `failure_threshold` |
+| `down` | failure | remain `down` | remain `down` |
+| `down` | success | remain `down` | `up` at `recovery_threshold` |
+| `paused` or archived | either | state and counters unchanged | state and counters unchanged |
+
+Success clears consecutive failures; failure clears consecutive successes. A
+late result for a paused or archived monitor is retained and becomes its latest
+historical result, but cannot revive it or advance threshold counters.
+
+History reads use bounded limit/offset pagination in v0.1. Cursor pagination can
+replace it when result volume demonstrates a need. `check_results` has no
+speculative execution key: the scheduler/lease migration must introduce and
+uniquely constrain the execution identity together with its retry semantics.
