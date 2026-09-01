@@ -1,4 +1,4 @@
-.PHONY: build fmt lint test test-race db-up db-down migrate
+.PHONY: build fmt generate lint test test-integration test-race db-up db-down migrate
 
 VERSION ?= dev
 COMMIT ?= none
@@ -11,11 +11,18 @@ build:
 fmt:
 	gofmt -w $$(find . -name '*.go' -not -path './vendor/*')
 
+generate:
+	docker run --rm -v "$$(pwd):/src" -w /src sqlc/sqlc:1.31.1 generate
+
 lint:
 	go vet ./...
 
 test:
 	go test ./...
+
+test-integration:
+	test -n "$$VIGIL_TEST_DATABASE_URL"
+	go test -count=1 ./...
 
 test-race:
 	go test -race ./...
