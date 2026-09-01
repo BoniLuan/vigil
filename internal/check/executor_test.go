@@ -356,7 +356,7 @@ func TestExecutorConnectionFailure(t *testing.T) {
 	}
 }
 
-func TestExecutorIgnoresEnvironmentProxyAndDisablesRedirects(t *testing.T) {
+func TestExecutorIgnoresEnvironmentProxyAcrossRedirects(t *testing.T) {
 	t.Setenv("HTTP_PROXY", "http://127.0.0.1:1")
 	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:1")
 	t.Setenv("NO_PROXY", "")
@@ -373,10 +373,8 @@ func TestExecutorIgnoresEnvironmentProxyAndDisablesRedirects(t *testing.T) {
 	defer server.Close()
 	executor, _, _, logicalURL := executorForServer(t, server.URL, []netip.Addr{firstPublicIP})
 	configured := testMonitor(logicalURL, monitor.MethodGET, time.Second)
-	configured.ExpectedStatusMin = http.StatusFound
-	configured.ExpectedStatusMax = http.StatusFound
 	result := executor.Execute(context.Background(), configured)
-	if result.Outcome != OutcomeSuccess || result.StatusCode == nil || *result.StatusCode != http.StatusFound || redirected.Load() {
+	if result.Outcome != OutcomeSuccess || result.StatusCode == nil || *result.StatusCode != http.StatusOK || !redirected.Load() {
 		t.Fatalf("Execute() = %+v, redirected = %v", result, redirected.Load())
 	}
 }

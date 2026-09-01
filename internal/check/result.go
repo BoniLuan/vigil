@@ -41,6 +41,10 @@ const (
 	ErrorCodeTLSHandshakeFailed    ErrorCode = "tls_handshake_failed"
 	ErrorCodeConnectionFailed      ErrorCode = "connection_failed"
 	ErrorCodeUnexpectedStatus      ErrorCode = "unexpected_status"
+	ErrorCodeRedirectLimit         ErrorCode = "redirect_limit"
+	ErrorCodeRedirectLoop          ErrorCode = "redirect_loop"
+	ErrorCodeRedirectDowngrade     ErrorCode = "redirect_downgrade"
+	ErrorCodeRedirectInvalid       ErrorCode = "redirect_invalid"
 	ErrorCodeInternal              ErrorCode = "internal_error"
 
 	MaxErrorDescriptionBytes = 512
@@ -50,7 +54,9 @@ func (code ErrorCode) Valid() bool {
 	switch code {
 	case ErrorCodeDestinationProhibited, ErrorCodeDNSLookupFailed,
 		ErrorCodeRequestTimeout, ErrorCodeTLSHandshakeFailed,
-		ErrorCodeConnectionFailed, ErrorCodeUnexpectedStatus, ErrorCodeInternal:
+		ErrorCodeConnectionFailed, ErrorCodeUnexpectedStatus,
+		ErrorCodeRedirectLimit, ErrorCodeRedirectLoop, ErrorCodeRedirectDowngrade,
+		ErrorCodeRedirectInvalid, ErrorCodeInternal:
 		return true
 	default:
 		return false

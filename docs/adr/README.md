@@ -14,3 +14,4 @@ to make history appear different.
 | [0006](0006-v0.1-state-retention-and-uptime-semantics.md) | v0.1 semantics | Accepted |
 | [0007](0007-hard-delete-monitors-before-history.md) | Hard-delete monitors before history | Accepted |
 | [0008](0008-ignore-environment-proxies-for-checks.md) | Ignore environment proxies for checks | Accepted |
+| [0009](0009-secure-redirect-handling.md) | Revalidate every HTTP redirect destination | Accepted |

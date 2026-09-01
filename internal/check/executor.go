@@ -3,8 +3,6 @@ package check
 import (
 	"context"
 	"crypto/tls"
-	"errors"
-	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -70,89 +68,66 @@ func (e *Executor) Execute(ctx context.Context, configured monitor.Monitor) Resu
 
 	executionCtx, cancel := context.WithTimeout(ctx, configured.Timeout)
 	defer cancel()
+	visited := map[string]struct{}{redirectKey(destination): {}}
+	redirects := 0
 
-	candidates, err := e.resolver.LookupNetIP(executionCtx, "ip", destination.Hostname())
-	if err != nil {
-		if executionCtx.Err() != nil {
-			setTimeout(&result)
-		} else {
-			result.Outcome = OutcomeDNSError
-			result.Error = errorPointer(ErrorCodeDNSLookupFailed, "hostname resolution failed")
+	for {
+		response, transport, dialer, failure := e.executeHop(executionCtx, destination, configured.HTTPMethod)
+		if dialer != nil {
+			result.DialedIP = dialer.DialedIP()
 		}
-		return finish()
-	}
-	approved, err := ValidateResolvedAddresses(e.policy, candidates)
-	if err != nil {
-		result.Outcome = OutcomeDNSError
-		if errors.Is(err, ErrDestinationProhibited) {
-			result.Error = errorPointer(ErrorCodeDestinationProhibited, "hostname resolved to a prohibited destination")
-		} else {
-			result.Error = errorPointer(ErrorCodeDNSLookupFailed, "hostname resolution returned no usable addresses")
+		if failure != nil {
+			result.Outcome = failure.outcome
+			result.Error = errorPointer(failure.code, failure.description)
+			return finish()
 		}
-		return finish()
-	}
 
-	port := destination.Port()
-	if port == "" {
-		if destination.Scheme == "https" {
-			port = "443"
-		} else {
-			port = "80"
+		statusCode := response.StatusCode
+		result.StatusCode = &statusCode
+		result.TLSExpiresAt = nil
+		if response.TLS != nil && len(response.TLS.PeerCertificates) > 0 {
+			expires := response.TLS.PeerCertificates[0].NotAfter.UTC()
+			result.TLSExpiresAt = &expires
 		}
-	}
-	dialer := &controlledDialer{
-		host: destination.Hostname(), port: port, candidates: approved, dial: e.dial,
-		executionCtx: executionCtx,
-	}
-	transport := e.transport(destination, dialer)
-	defer transport.CloseIdleConnections()
-	client := &http.Client{
-		Transport: transport,
-		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
-	request, err := http.NewRequestWithContext(executionCtx, configured.HTTPMethod, destination.String(), nil)
-	if err != nil {
-		result.Outcome = OutcomeInternalError
-		result.Error = errorPointer(ErrorCodeInternal, "failed to construct HTTP request")
-		return finish()
-	}
-	request.Host = destination.Host
-	request.Header.Set("User-Agent", UserAgent)
-
-	response, err := client.Do(request)
-	result.DialedIP = dialer.DialedIP()
-	if err != nil {
-		if executionCtx.Err() != nil {
-			setTimeout(&result)
-		} else {
-			result.Outcome = OutcomeConnectionError
-			result.Error = errorPointer(ErrorCodeConnectionFailed, "connection or HTTP exchange failed")
-		}
-		return finish()
-	}
-	defer response.Body.Close()
-	statusCode := response.StatusCode
-	result.StatusCode = &statusCode
-	if response.TLS != nil && len(response.TLS.PeerCertificates) > 0 {
-		expires := response.TLS.PeerCertificates[0].NotAfter.UTC()
-		result.TLSExpiresAt = &expires
-	}
-	if configured.HTTPMethod == monitor.MethodGET {
-		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, MaxResponseDrainBytes))
-		if executionCtx.Err() != nil {
+		next, redirect, redirectErr := redirectTarget(response, destination)
+		if err := closeHopResponse(executionCtx, response, configured.HTTPMethod, transport); err != nil {
 			setTimeout(&result)
 			return finish()
 		}
+		if redirectErr != nil {
+			result.Outcome = OutcomeConnectionError
+			result.Error = errorPointer(ErrorCodeRedirectInvalid, "redirect target is invalid or unsafe")
+			return finish()
+		}
+		if !redirect {
+			if response.StatusCode >= configured.ExpectedStatusMin && response.StatusCode <= configured.ExpectedStatusMax {
+				result.Outcome = OutcomeSuccess
+			} else {
+				result.Outcome = OutcomeHTTPFailure
+				result.Error = errorPointer(ErrorCodeUnexpectedStatus, "HTTP response status was outside the expected range")
+			}
+			return finish()
+		}
+		if destination.Scheme == "https" && next.Scheme == "http" {
+			result.Outcome = OutcomeConnectionError
+			result.Error = errorPointer(ErrorCodeRedirectDowngrade, "HTTPS redirect to HTTP is prohibited")
+			return finish()
+		}
+		key := redirectKey(next)
+		if _, found := visited[key]; found {
+			result.Outcome = OutcomeConnectionError
+			result.Error = errorPointer(ErrorCodeRedirectLoop, "redirect loop detected")
+			return finish()
+		}
+		if redirects >= MaxRedirects {
+			result.Outcome = OutcomeConnectionError
+			result.Error = errorPointer(ErrorCodeRedirectLimit, "redirect limit exceeded")
+			return finish()
+		}
+		redirects++
+		visited[key] = struct{}{}
+		destination = next
 	}
-	if response.StatusCode >= configured.ExpectedStatusMin && response.StatusCode <= configured.ExpectedStatusMax {
-		result.Outcome = OutcomeSuccess
-	} else {
-		result.Outcome = OutcomeHTTPFailure
-		result.Error = errorPointer(ErrorCodeUnexpectedStatus, "HTTP response status was outside the expected range")
-	}
-	return finish()
 }
 
 func (e *Executor) transport(destination *url.URL, dialer *controlledDialer) *http.Transport {
