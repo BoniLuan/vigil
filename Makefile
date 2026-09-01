@@ -1,9 +1,10 @@
-.PHONY: build fmt generate lint test test-integration test-race db-up db-down migrate
+.PHONY: build fmt generate lint test test-integration test-race db-up db-down test-db-create migrate
 
 VERSION ?= dev
 COMMIT ?= none
 BUILD_DATE ?= unknown
 LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(BUILD_DATE)
+TEST_DATABASE_URL ?= postgres://vigil:vigil@localhost:5432/vigil_test?sslmode=disable
 
 build:
 	go build -buildvcs=false -trimpath -ldflags "$(LDFLAGS)" -o bin/vigil ./cmd/vigil
@@ -21,8 +22,7 @@ test:
 	go test ./...
 
 test-integration:
-	test -n "$$VIGIL_TEST_DATABASE_URL"
-	go test -count=1 ./...
+	VIGIL_TEST_DATABASE_URL="$(TEST_DATABASE_URL)" go test -count=1 ./...
 
 test-race:
 	go test -race ./...
@@ -32,6 +32,10 @@ db-up:
 
 db-down:
 	docker compose down
+
+test-db-create:
+	docker compose up -d postgres
+	docker compose exec -T postgres sh -ec 'psql -U vigil -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='"'"'vigil_test'"'"'" | grep -q 1 || createdb -U vigil vigil_test'
 
 migrate:
 	go run ./cmd/vigil migrate up

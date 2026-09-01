@@ -89,10 +89,39 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
     delete:
       operationId: deleteMonitor
-      summary: Permanently delete a monitor
-      description: Hard-deletes configuration and cascades its current-state row.
+      summary: Archive a monitor
+      description: Disables the monitor, removes public visibility, and preserves configuration and check history.
       responses:
-        '204': { description: Monitor deleted }
+        '204': { description: Monitor archived }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /monitors/{id}/checks:
+    parameters:
+      - $ref: '#/components/parameters/MonitorID'
+    get:
+      operationId: listMonitorChecks
+      summary: List recent check results for a monitor
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0, maximum: 1000000, default: 0 }
+      responses:
+        '200':
+          description: Bounded check-result history, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, limit, offset]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/CheckResult' }
+                  limit: { type: integer }
+                  offset: { type: integer }
         '400': { $ref: '#/components/responses/BadRequest' }
         '404': { $ref: '#/components/responses/NotFound' }
   /monitors/{id}/pause:
@@ -109,6 +138,7 @@ paths:
               schema: { $ref: '#/components/schemas/Monitor' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /monitors/{id}/resume:
     parameters:
       - $ref: '#/components/parameters/MonitorID'
@@ -123,6 +153,7 @@ paths:
               schema: { $ref: '#/components/schemas/Monitor' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
 components:
   securitySchemes:
     basicAuth:
@@ -210,6 +241,7 @@ components:
             - public
             - version
             - state
+            - archived_at
             - created_at
             - updated_at
             - state_updated_at
@@ -217,9 +249,26 @@ components:
             id: { type: string, format: uuid, readOnly: true }
             version: { type: integer, format: int64, minimum: 1, readOnly: true }
             state: { type: string, enum: [pending, up, down, paused], readOnly: true }
+            archived_at: { type: ['string', 'null'], format: date-time, readOnly: true }
             created_at: { type: string, format: date-time, readOnly: true }
             updated_at: { type: string, format: date-time, readOnly: true }
             state_updated_at: { type: string, format: date-time, readOnly: true }
+    CheckResult:
+      type: object
+      required: [id, monitor_id, started_at, finished_at, duration_ms, outcome, status_code, error_code, error_description, dialed_ip, tls_expires_at, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        monitor_id: { type: string, format: uuid }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time }
+        duration_ms: { type: integer, format: int64, minimum: 0 }
+        outcome: { type: string, enum: [success, http_failure, timeout, dns_error, tls_error, connection_error, internal_error] }
+        status_code: { type: ['integer', 'null'], minimum: 100, maximum: 599 }
+        error_code: { type: ['string', 'null'], maxLength: 64 }
+        error_description: { type: ['string', 'null'], maxLength: 512 }
+        dialed_ip: { type: ['string', 'null'] }
+        tls_expires_at: { type: ['string', 'null'], format: date-time }
+        created_at: { type: string, format: date-time }
     Problem:
       type: object
       required: [type, title, status]
