@@ -54,6 +54,12 @@ func (e *Executor) Execute(ctx context.Context, configured monitor.Monitor) Resu
 		return result
 	}
 
+	if failure := classifyContextError(ctx, ctx.Err()); failure != nil {
+		result.Outcome = failure.outcome
+		result.Error = errorPointer(failure.code, failure.description)
+		return finish()
+	}
+
 	if configured.HTTPMethod != monitor.MethodGET && configured.HTTPMethod != monitor.MethodHEAD {
 		result.Outcome = OutcomeInternalError
 		result.Error = errorPointer(ErrorCodeInternal, "unsupported HTTP method in monitor configuration")
@@ -66,7 +72,7 @@ func (e *Executor) Execute(ctx context.Context, configured monitor.Monitor) Resu
 		return finish()
 	}
 
-	executionCtx, cancel := context.WithTimeout(ctx, configured.Timeout)
+	executionCtx, cancel := context.WithTimeoutCause(ctx, configured.Timeout, errMonitorDeadline)
 	defer cancel()
 	visited := map[string]struct{}{redirectKey(destination): {}}
 	redirects := 0
@@ -85,13 +91,13 @@ func (e *Executor) Execute(ctx context.Context, configured monitor.Monitor) Resu
 		statusCode := response.StatusCode
 		result.StatusCode = &statusCode
 		result.TLSExpiresAt = nil
-		if response.TLS != nil && len(response.TLS.PeerCertificates) > 0 {
-			expires := response.TLS.PeerCertificates[0].NotAfter.UTC()
+		if leaf := verifiedLeaf(response.TLS); leaf != nil {
+			expires := leaf.NotAfter.UTC()
 			result.TLSExpiresAt = &expires
 		}
 		next, redirect, redirectErr := redirectTarget(response, destination)
 		if err := closeHopResponse(executionCtx, response, configured.HTTPMethod, transport); err != nil {
-			setTimeout(&result)
+			setContextFailure(&result, executionCtx)
 			return finish()
 		}
 		if redirectErr != nil {
@@ -135,9 +141,22 @@ func (e *Executor) transport(destination *url.URL, dialer *controlledDialer) *ht
 	if destination.Scheme == "https" {
 		tlsConfig.ServerName = destination.Hostname()
 	}
+	dialTLSContext := func(ctx context.Context, network, address string) (net.Conn, error) {
+		connection, err := dialer.DialContext(ctx, network, address)
+		if err != nil {
+			return nil, err
+		}
+		tlsConnection := tls.Client(connection, tlsConfig.Clone())
+		if err := tlsConnection.HandshakeContext(ctx); err != nil {
+			_ = connection.Close()
+			return nil, &tlsHandshakeError{err: err}
+		}
+		return tlsConnection, nil
+	}
 	return &http.Transport{
 		Proxy:                 nil,
 		DialContext:           dialer.DialContext,
+		DialTLSContext:        dialTLSContext,
 		TLSClientConfig:       tlsConfig,
 		ForceAttemptHTTP2:     true,
 		DisableCompression:    true,
@@ -149,9 +168,13 @@ func (e *Executor) transport(destination *url.URL, dialer *controlledDialer) *ht
 	}
 }
 
-func setTimeout(result *Result) {
-	result.Outcome = OutcomeTimeout
-	result.Error = errorPointer(ErrorCodeRequestTimeout, "check deadline exceeded or canceled")
+func setContextFailure(result *Result, ctx context.Context) {
+	failure := classifyContextError(ctx, ctx.Err())
+	if failure == nil {
+		failure = &hopFailure{OutcomeTimeout, ErrorCodeDeadlineExceeded, "check deadline exceeded"}
+	}
+	result.Outcome = failure.outcome
+	result.Error = errorPointer(failure.code, failure.description)
 }
 
 func errorPointer(code ErrorCode, description string) *ErrorDetail {

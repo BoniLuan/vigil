@@ -37,9 +37,18 @@ type ErrorCode string
 const (
 	ErrorCodeDestinationProhibited ErrorCode = "destination_prohibited"
 	ErrorCodeDNSLookupFailed       ErrorCode = "dns_lookup_failed"
+	ErrorCodeDNSNoAddresses        ErrorCode = "dns_no_addresses"
 	ErrorCodeRequestTimeout        ErrorCode = "request_timeout"
+	ErrorCodeDeadlineExceeded      ErrorCode = "deadline_exceeded"
+	ErrorCodeCancelled             ErrorCode = "cancelled"
+	ErrorCodeTLSCertificate        ErrorCode = "tls_certificate"
+	ErrorCodeTLSHostname           ErrorCode = "tls_hostname"
 	ErrorCodeTLSHandshakeFailed    ErrorCode = "tls_handshake_failed"
 	ErrorCodeConnectionFailed      ErrorCode = "connection_failed"
+	ErrorCodeConnectionRefused     ErrorCode = "connection_refused"
+	ErrorCodeConnectionReset       ErrorCode = "connection_reset"
+	ErrorCodeConnectionClosed      ErrorCode = "connection_closed"
+	ErrorCodeNetworkUnreachable    ErrorCode = "network_unreachable"
 	ErrorCodeUnexpectedStatus      ErrorCode = "unexpected_status"
 	ErrorCodeRedirectLimit         ErrorCode = "redirect_limit"
 	ErrorCodeRedirectLoop          ErrorCode = "redirect_loop"
@@ -52,9 +61,11 @@ const (
 
 func (code ErrorCode) Valid() bool {
 	switch code {
-	case ErrorCodeDestinationProhibited, ErrorCodeDNSLookupFailed,
-		ErrorCodeRequestTimeout, ErrorCodeTLSHandshakeFailed,
-		ErrorCodeConnectionFailed, ErrorCodeUnexpectedStatus,
+	case ErrorCodeDestinationProhibited, ErrorCodeDNSLookupFailed, ErrorCodeDNSNoAddresses,
+		ErrorCodeRequestTimeout, ErrorCodeDeadlineExceeded, ErrorCodeCancelled,
+		ErrorCodeTLSCertificate, ErrorCodeTLSHostname, ErrorCodeTLSHandshakeFailed,
+		ErrorCodeConnectionFailed, ErrorCodeConnectionRefused, ErrorCodeConnectionReset,
+		ErrorCodeConnectionClosed, ErrorCodeNetworkUnreachable, ErrorCodeUnexpectedStatus,
 		ErrorCodeRedirectLimit, ErrorCodeRedirectLoop, ErrorCodeRedirectDowngrade,
 		ErrorCodeRedirectInvalid, ErrorCodeInternal:
 		return true

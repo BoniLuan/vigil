@@ -153,7 +153,7 @@ func TestExecutorDNSFailuresFailClosedBeforeDial(t *testing.T) {
 		errorCode ErrorCode
 	}{
 		{"resolution error", &fakeResolver{err: errors.New("offline DNS failure")}, ErrorCodeDNSLookupFailed},
-		{"empty result", &fakeResolver{}, ErrorCodeDNSLookupFailed},
+		{"empty result", &fakeResolver{}, ErrorCodeDNSNoAddresses},
 		{"prohibited result", &fakeResolver{addresses: []netip.Addr{netip.MustParseAddr("127.0.0.1")}}, ErrorCodeDestinationProhibited},
 		{"mixed result", &fakeResolver{addresses: []netip.Addr{firstPublicIP, netip.MustParseAddr("10.0.0.1")}}, ErrorCodeDestinationProhibited},
 	}

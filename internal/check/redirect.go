@@ -26,8 +26,8 @@ type hopFailure struct {
 func (e *Executor) executeHop(ctx context.Context, destination *url.URL, method string) (*http.Response, *http.Transport, *controlledDialer, *hopFailure) {
 	candidates, err := e.resolver.LookupNetIP(ctx, "ip", destination.Hostname())
 	if err != nil {
-		if ctx.Err() != nil {
-			return nil, nil, nil, &hopFailure{OutcomeTimeout, ErrorCodeRequestTimeout, "check deadline exceeded or canceled"}
+		if failure := classifyContextError(ctx, err); failure != nil {
+			return nil, nil, nil, failure
 		}
 		return nil, nil, nil, &hopFailure{OutcomeDNSError, ErrorCodeDNSLookupFailed, "hostname resolution failed"}
 	}
@@ -36,7 +36,7 @@ func (e *Executor) executeHop(ctx context.Context, destination *url.URL, method 
 		if errors.Is(err, ErrDestinationProhibited) {
 			return nil, nil, nil, &hopFailure{OutcomeDNSError, ErrorCodeDestinationProhibited, "hostname resolved to a prohibited destination"}
 		}
-		return nil, nil, nil, &hopFailure{OutcomeDNSError, ErrorCodeDNSLookupFailed, "hostname resolution returned no usable addresses"}
+		return nil, nil, nil, &hopFailure{OutcomeDNSError, ErrorCodeDNSNoAddresses, "hostname resolution returned no addresses"}
 	}
 
 	port := destination.Port()
@@ -63,10 +63,7 @@ func (e *Executor) executeHop(ctx context.Context, destination *url.URL, method 
 	response, err := transport.RoundTrip(request)
 	if err != nil {
 		transport.CloseIdleConnections()
-		if ctx.Err() != nil || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			return nil, nil, dialer, &hopFailure{OutcomeTimeout, ErrorCodeRequestTimeout, "check deadline exceeded or canceled"}
-		}
-		return nil, nil, dialer, &hopFailure{OutcomeConnectionError, ErrorCodeConnectionFailed, "connection or HTTP exchange failed"}
+		return nil, nil, dialer, classifyExecutionError(ctx, err)
 	}
 	return response, transport, dialer, nil
 }
