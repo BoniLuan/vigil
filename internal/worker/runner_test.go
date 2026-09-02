@@ -251,3 +251,36 @@ func (c *panicOnceChecker) Execute(_ context.Context, configured monitor.Monitor
 	now := time.Now().UTC()
 	return check.Result{MonitorID: configured.ID, StartedAt: now, FinishedAt: now, Outcome: check.OutcomeSuccess}
 }
+
+func TestRunnerObserverReceivesBoundedLifecycleEvents(t *testing.T) {
+	claimer := &fakeClaimer{jobs: []scheduler.Execution{job()}}
+	observer := &recordingObserver{}
+	runner := testRunner(t, Config{Concurrency: 1, PollInterval: time.Hour, LeaseDuration: 45 * time.Second, ShutdownGrace: time.Second}, claimer, &panicOnceChecker{}, &fakeCompleter{})
+	runner.observer = observer
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- runner.Run(ctx) }()
+	deadline := time.Now().Add(time.Second)
+	for observer.panics.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	cancel()
+	<-done
+	if observer.claims.Load() != 1 || observer.panics.Load() != 1 || observer.started.Load() != 1 || observer.stopped.Load() != 1 {
+		t.Fatalf("observer claims=%d panics=%d started=%d stopped=%d", observer.claims.Load(), observer.panics.Load(), observer.started.Load(), observer.stopped.Load())
+	}
+}
+
+type recordingObserver struct{ claims, panics, started, stopped atomic.Int32 }
+
+func (o *recordingObserver) ObserveClaim(count int, _ error) {
+	if count > 0 {
+		o.claims.Add(1)
+	}
+}
+func (o *recordingObserver) CheckStarted()                           { o.started.Add(1) }
+func (o *recordingObserver) CheckStopped()                           { o.stopped.Add(1) }
+func (*recordingObserver) ObserveCheck(check.Outcome, time.Duration) {}
+func (*recordingObserver) CompletionFailed()                         {}
+func (o *recordingObserver) PanicRecovered()                         { o.panics.Add(1) }
+func (*recordingObserver) LeaseStartRejected()                       {}

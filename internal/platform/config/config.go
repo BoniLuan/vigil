@@ -23,6 +23,7 @@ type Config struct {
 	WorkerConcurrency   int
 	WorkerPollInterval  time.Duration
 	WorkerLeaseDuration time.Duration
+	WorkerHTTPAddr      string
 }
 
 func Load() (Config, error) {
@@ -35,6 +36,7 @@ func Load() (Config, error) {
 		DatabaseMaxConns:  10,
 		DatabaseMinConns:  1,
 		WorkerConcurrency: 5,
+		WorkerHTTPAddr:    env("VIGIL_WORKER_HTTP_ADDR", ":9090"),
 	}
 
 	var errs []error
@@ -67,6 +69,9 @@ func Load() (Config, error) {
 	}
 	if cfg.DatabaseMinConns < 0 || cfg.DatabaseMinConns > cfg.DatabaseMaxConns {
 		errs = append(errs, errors.New("VIGIL_DATABASE_MIN_CONNS must be between 0 and VIGIL_DATABASE_MAX_CONNS"))
+	}
+	if cfg.WorkerHTTPAddr == "" {
+		errs = append(errs, errors.New("VIGIL_WORKER_HTTP_ADDR must not be empty"))
 	}
 	if cfg.WorkerConcurrency < 1 || cfg.WorkerConcurrency > 100 {
 		errs = append(errs, errors.New("VIGIL_WORKER_CONCURRENCY must be between 1 and 100"))

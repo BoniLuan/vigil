@@ -1,11 +1,11 @@
 # Vigil application metrics
 
-The API process exposes Prometheus text metrics at `GET /metrics` alongside
-`/livez` and PostgreSQL-backed `/readyz`. The endpoint is unauthenticated inside
-the application and must remain on a private network or behind trusted reverse
-proxy controls; it must not be published directly to the internet.
+The API and worker processes expose Prometheus text metrics alongside `/livez`
+and PostgreSQL-backed `/readyz`. These operational endpoints are unauthenticated
+inside the application and must remain on the private `vigil-monitoring` Docker
+network; they must not be published directly to the internet.
 
-Part A exports:
+The API exports:
 
 - `vigil_build_info{version,commit,role}`
 - `vigil_http_requests_total{method,route,status_class}`
@@ -22,7 +22,14 @@ Routes use `http.ServeMux` patterns such as `GET /api/v1/monitors/{id}`. Monitor
 IDs, names, URLs, hosts, execution IDs, IPs, and error text are never metric
 labels. Build labels are bounded per deployed process.
 
-API and worker are independent processes, so the API cannot correctly export
-worker-local active-check, checker-outcome, panic, or completion counters. Those
-collectors and a private worker metrics listener are deferred to Part B, when
-Compose networking can make the endpoint scrapeable without publishing it.
+The worker listens on `VIGIL_WORKER_HTTP_ADDR` (default `:9090`) and exports:
+
+- `vigil_scheduler_claim_attempts_total{result}`
+- `vigil_scheduler_claimed_executions_total`
+- `vigil_checks_completed_total{outcome}`
+- `vigil_check_duration_seconds{outcome}`
+- `vigil_worker_active_checks` and `vigil_worker_capacity`
+- completion-failure, panic-recovery, and lease-start-rejection counters
+- build, database-pool, and scheduler-lag metrics
+
+A check is counted when the checker returns, even if durable completion later fails. Labels are bounded enums or build metadata; monitor and execution identifiers, URLs, hosts, IPs, and error descriptions are never labels.

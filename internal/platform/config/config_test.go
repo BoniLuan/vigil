@@ -16,7 +16,7 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.HTTPAddr != ":8080" || cfg.ShutdownTimeout != 35*time.Second {
 		t.Fatalf("unexpected defaults: %+v", cfg)
 	}
-	if cfg.WorkerConcurrency != 5 || cfg.WorkerPollInterval != time.Second || cfg.WorkerLeaseDuration != 45*time.Second {
+	if cfg.WorkerConcurrency != 5 || cfg.WorkerPollInterval != time.Second || cfg.WorkerLeaseDuration != 45*time.Second || cfg.WorkerHTTPAddr != ":9090" {
 		t.Fatalf("unexpected worker defaults: %+v", cfg)
 	}
 	if cfg.DatabaseMaxConns != 10 || cfg.DatabaseMinConns != 1 {

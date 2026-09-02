@@ -38,6 +38,6 @@ result relationship prevent duplicate persistence.
 
 On SIGINT or SIGTERM the process stops polling and claiming immediately. Active
 checks receive the configured shutdown grace period (35 seconds by default).
-Only when that grace expires are their contexts cancelled. The worker does not
-run a separate readiness HTTP server in v0.1; process state, PostgreSQL-backed
-behavior, and structured logs are the operational signals.
+Only when that grace expires are their contexts cancelled. The worker also runs a private operational listener on `VIGIL_WORKER_HTTP_ADDR`
+(default `:9090`) with `/livez`, PostgreSQL-backed `/readyz`, and `/metrics`.
+Production Compose exposes it only to the shared monitoring network.

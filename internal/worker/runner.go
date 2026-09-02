@@ -56,9 +56,10 @@ type Runner struct {
 	completer  Completer
 	logger     *slog.Logger
 	completion chan struct{}
+	observer   Observer
 }
 
-func New(config Config, workerID uuid.UUID, claimer Claimer, monitors MonitorLoader, checker Checker, completer Completer, logger *slog.Logger) (*Runner, error) {
+func New(config Config, workerID uuid.UUID, claimer Claimer, monitors MonitorLoader, checker Checker, completer Completer, logger *slog.Logger, options ...Option) (*Runner, error) {
 	if config.Concurrency < 1 || config.Concurrency > MaximumConcurrency ||
 		config.PollInterval <= 0 || config.LeaseDuration < monitor.MaxTimeout+CompletionSafetyMargin ||
 		config.ShutdownGrace <= 0 || workerID == uuid.Nil || claimer == nil || monitors == nil || checker == nil || completer == nil {
@@ -67,11 +68,15 @@ func New(config Config, workerID uuid.UUID, claimer Claimer, monitors MonitorLoa
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Runner{
+	runner := &Runner{
 		config: config, workerID: workerID, claimer: claimer, monitors: monitors,
 		checker: checker, completer: completer, logger: logger,
-		completion: make(chan struct{}, 1),
-	}, nil
+		completion: make(chan struct{}, 1), observer: noopObserver{},
+	}
+	for _, option := range options {
+		option(runner)
+	}
+	return runner, nil
 }
 
 // Run polls until ctx is cancelled. Claimed work starts immediately because the
@@ -94,6 +99,7 @@ func (r *Runner) Run(ctx context.Context) error {
 			claims, err := r.claimer.ClaimDue(ctx, r.workerID, scheduler.ClaimOptions{
 				BatchSize: available, LeaseDuration: r.config.LeaseDuration,
 			})
+			r.observer.ObserveClaim(len(claims), err)
 			if err != nil {
 				delay = backoff.Next()
 				allowCompletionWake = false
@@ -138,6 +144,7 @@ func (r *Runner) Run(ctx context.Context) error {
 func (r *Runner) runJob(ctx context.Context, execution scheduler.Execution, slots chan struct{}, jobs *sync.WaitGroup) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
+			r.observer.PanicRecovered()
 			r.logger.Error("scheduled execution panicked; lease left for recovery",
 				"execution_id", execution.ID, "monitor_id", execution.MonitorID)
 		}
@@ -169,13 +176,18 @@ func (r *Runner) runJob(ctx context.Context, execution scheduler.Execution, slot
 		return
 	}
 	if !canStart {
+		r.observer.LeaseStartRejected()
 		r.logger.Debug("execution lease has insufficient remaining time", "execution_id", execution.ID,
 			"monitor_id", execution.MonitorID, "required_lease", requiredLease)
 		return
 	}
 
+	r.observer.CheckStarted()
+	defer r.observer.CheckStopped()
 	result := r.checker.Execute(ctx, configured)
+	r.observer.ObserveCheck(result.Outcome, result.Duration)
 	if _, err := r.completer.CompleteExecution(ctx, execution.ID, r.workerID, result); err != nil {
+		r.observer.CompletionFailed()
 		r.logger.Error("complete scheduled execution failed", "execution_id", execution.ID,
 			"monitor_id", execution.MonitorID, "outcome", result.Outcome, "error", err)
 		return
