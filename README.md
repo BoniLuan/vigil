@@ -25,6 +25,7 @@ current-state projection, and monitor administration APIs.
 - [Architecture decision records](docs/adr/README.md)
 - [Worker runtime and lifecycle](docs/WORKER.md)
 - [Application metrics](docs/OBSERVABILITY.md)
+- [Single-VPS deployment runbook](docs/DEPLOYMENT.md)
 
 ## Foundation commands
 
@@ -49,6 +50,8 @@ Liveness:  http://localhost:8080/livez
 Readiness: http://localhost:8080/readyz
 ```
 
+The worker exposes private operational endpoints on port `9090` by default. Production Compose does not publish that port to the host.
+
 Available process commands are:
 
 ```text
@@ -68,7 +71,7 @@ make lint
 make build
 ```
 
-Vigil implements a minimal server-rendered administration dashboard, fixed-window uptime summaries, Prometheus-compatible application metrics, HTTP monitor configuration, secure HTTP execution, durable scheduling and leases, bounded worker concurrency, check history, threshold-based current-state projection, and administration endpoints under `/api/v1/monitors`. Incidents, notifications, and the observability stack remain intentionally unimplemented. See [`api/openapi.yaml`](api/openapi.yaml) for the
+Vigil implements a minimal server-rendered administration dashboard, fixed-window uptime summaries, Prometheus-compatible API and worker metrics, HTTP monitor configuration, secure HTTP execution, durable scheduling and leases, bounded worker concurrency, check history, threshold-based current-state projection, and administration endpoints under `/api/v1/monitors`. The production deployment includes a separately managed Prometheus, Grafana, Node Exporter, and cAdvisor stack. Incidents and notifications remain intentionally unimplemented. See [`api/openapi.yaml`](api/openapi.yaml) for the
 current API contract.
 
 PostgreSQL integration tests require an isolated database whose name ends in
