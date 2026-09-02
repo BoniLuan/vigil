@@ -31,27 +31,35 @@ var (
 )
 
 type Monitor struct {
-	ID                uuid.UUID
-	Name              string
-	Slug              string
-	Description       *string
-	Kind              string
-	URL               string
-	HTTPMethod        string
-	ExpectedStatusMin int
-	ExpectedStatusMax int
-	Interval          time.Duration
-	Timeout           time.Duration
-	FailureThreshold  int
-	RecoveryThreshold int
-	Enabled           bool
-	Public            bool
-	Version           int64
-	State             string
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
-	StateUpdatedAt    time.Time
-	ArchivedAt        *time.Time
+	ID                   uuid.UUID
+	Name                 string
+	Slug                 string
+	Description          *string
+	Kind                 string
+	URL                  string
+	HTTPMethod           string
+	ExpectedStatusMin    int
+	ExpectedStatusMax    int
+	Interval             time.Duration
+	Timeout              time.Duration
+	FailureThreshold     int
+	RecoveryThreshold    int
+	Enabled              bool
+	Public               bool
+	Version              int64
+	State                string
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+	StateUpdatedAt       time.Time
+	ArchivedAt           *time.Time
+	NextCheckAt          *time.Time
+	LastCheckedAt        *time.Time
+	LastOutcome          *string
+	LastStatusCode       *int
+	LastDuration         *time.Duration
+	ConsecutiveFailures  int64
+	ConsecutiveSuccesses int64
+	LastTLSExpiresAt     *time.Time
 }
 
 type CreateInput struct {

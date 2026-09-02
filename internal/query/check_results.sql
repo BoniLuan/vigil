@@ -43,3 +43,20 @@ SELECT EXISTS(SELECT 1 FROM monitors WHERE id = $1);
 
 -- name: GetCheckResultByExecution :one
 SELECT * FROM check_results WHERE execution_id = $1;
+
+-- name: GetMonitorSummaries :many
+SELECT '24h'::text AS window, 1::integer AS sort_order,
+       count(*)::bigint AS completed_checks,
+       count(*) FILTER (WHERE results.outcome = 'success')::bigint AS successful_checks,
+       COALESCE(avg(results.duration_ms), 0)::double precision AS average_duration_ms
+FROM check_results AS results WHERE results.monitor_id = sqlc.arg(target_monitor_id) AND results.finished_at >= transaction_timestamp() - interval '24 hours'
+UNION ALL
+SELECT '7d', 2, count(*)::bigint, count(*) FILTER (WHERE results.outcome = 'success')::bigint, COALESCE(avg(results.duration_ms), 0)::double precision
+FROM check_results AS results WHERE results.monitor_id = sqlc.arg(target_monitor_id) AND results.finished_at >= transaction_timestamp() - interval '7 days'
+UNION ALL
+SELECT '30d', 3, count(*)::bigint, count(*) FILTER (WHERE results.outcome = 'success')::bigint, COALESCE(avg(results.duration_ms), 0)::double precision
+FROM check_results AS results WHERE results.monitor_id = sqlc.arg(target_monitor_id) AND results.finished_at >= transaction_timestamp() - interval '30 days'
+UNION ALL
+SELECT '90d', 4, count(*)::bigint, count(*) FILTER (WHERE results.outcome = 'success')::bigint, COALESCE(avg(results.duration_ms), 0)::double precision
+FROM check_results AS results WHERE results.monitor_id = sqlc.arg(target_monitor_id) AND results.finished_at >= transaction_timestamp() - interval '90 days'
+ORDER BY sort_order;

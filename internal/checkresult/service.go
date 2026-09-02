@@ -125,6 +125,31 @@ func (s *Service) CompleteExecution(ctx context.Context, executionID, workerID u
 	return stored(row), nil
 }
 
+func (s *Service) Summaries(ctx context.Context, monitorID uuid.UUID) ([]Summary, error) {
+	exists, err := s.queries.MonitorExists(ctx, monitorID)
+	if err != nil {
+		return nil, fmt.Errorf("check monitor existence: %w", err)
+	}
+	if !exists {
+		return nil, monitor.ErrNotFound
+	}
+	rows, err := s.queries.GetMonitorSummaries(ctx, monitorID)
+	if err != nil {
+		return nil, fmt.Errorf("get monitor summaries: %w", err)
+	}
+	result := make([]Summary, 0, len(rows))
+	for _, row := range rows {
+		summary := Summary{Window: row.Window, CompletedChecks: row.CompletedChecks, SuccessfulChecks: row.SuccessfulChecks}
+		if row.CompletedChecks > 0 {
+			uptime := float64(row.SuccessfulChecks) * 100 / float64(row.CompletedChecks)
+			latency := time.Duration(row.AverageDurationMs * float64(time.Millisecond))
+			summary.UptimePercent, summary.AverageLatency = &uptime, &latency
+		}
+		result = append(result, summary)
+	}
+	return result, nil
+}
+
 func (s *Service) List(ctx context.Context, monitorID uuid.UUID, options ListOptions) ([]StoredResult, error) {
 	if options.Limit <= 0 {
 		options.Limit = 50

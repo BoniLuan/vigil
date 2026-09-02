@@ -139,7 +139,7 @@ func TestExecutorBasicGETAndHEAD(t *testing.T) {
 			if observation.Method != test.method || observation.Host != parsed.Host {
 				t.Fatalf("server observation = %+v, want method %s host %s", observation, test.method, parsed.Host)
 			}
-			if observation.UserAgent != UserAgent || observation.AcceptEncoding != "" {
+			if observation.UserAgent != DefaultUserAgent || observation.AcceptEncoding != "" {
 				t.Fatalf("headers = %+v", observation)
 			}
 		})

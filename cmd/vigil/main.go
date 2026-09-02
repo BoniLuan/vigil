@@ -61,9 +61,9 @@ func realMain(args []string) int {
 	var runErr error
 	switch command {
 	case "api":
-		runErr = run.API(ctx, cfg, logger)
+		runErr = run.API(ctx, cfg, run.BuildInfo{Version: version, Commit: commit}, logger)
 	case "worker":
-		runErr = run.Worker(ctx, cfg, logger)
+		runErr = run.Worker(ctx, cfg, run.BuildInfo{Version: version, Commit: commit}, logger)
 	case "migrate":
 		runErr = run.Migrations(ctx, cfg, logger, args[2:])
 	}

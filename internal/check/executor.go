@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	// UserAgent remains stable until build metadata is exposed outside cmd/vigil.
-	UserAgent                   = "Vigil/0.1"
+	// DefaultUserAgent is used by tests and local checker construction.
+	DefaultUserAgent            = "Vigil/dev"
 	MaxResponseDrainBytes int64 = 32 << 10
 )
 
@@ -23,9 +23,17 @@ type Executor struct {
 	dial      dialContextFunc
 	tlsConfig *tls.Config
 	now       func() time.Time
+	userAgent string
 }
 
 func NewExecutor(resolver Resolver) *Executor {
+	return NewExecutorWithUserAgent(resolver, DefaultUserAgent)
+}
+
+func NewExecutorWithUserAgent(resolver Resolver, userAgent string) *Executor {
+	if userAgent == "" {
+		userAgent = DefaultUserAgent
+	}
 	if resolver == nil {
 		resolver = net.DefaultResolver
 	}
@@ -37,7 +45,7 @@ func NewExecutor(resolver Resolver) *Executor {
 		tlsConfig: &tls.Config{
 			MinVersion: tls.VersionTLS12,
 		},
-		now: time.Now,
+		now: time.Now, userAgent: userAgent,
 	}
 }
 

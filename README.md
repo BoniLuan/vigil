@@ -24,6 +24,7 @@ current-state projection, and monitor administration APIs.
 - [Release roadmap and implementation order](docs/ROADMAP.md)
 - [Architecture decision records](docs/adr/README.md)
 - [Worker runtime and lifecycle](docs/WORKER.md)
+- [Application metrics](docs/OBSERVABILITY.md)
 
 ## Foundation commands
 
@@ -37,6 +38,15 @@ make migrate
 go run ./cmd/vigil api
 # In a separate process:
 go run ./cmd/vigil worker
+```
+
+With the API running:
+
+```text
+Admin UI:  http://localhost:8080/monitors
+Metrics:   http://localhost:8080/metrics
+Liveness:  http://localhost:8080/livez
+Readiness: http://localhost:8080/readyz
 ```
 
 Available process commands are:
@@ -58,7 +68,7 @@ make lint
 make build
 ```
 
-Vigil implements HTTP monitor configuration, secure HTTP execution, durable scheduling and leases, bounded worker concurrency, check history, threshold-based current-state projection, and administration endpoints under `/api/v1/monitors`. Incidents, notifications, and the observability stack remain intentionally unimplemented. See [`api/openapi.yaml`](api/openapi.yaml) for the
+Vigil implements a minimal server-rendered administration dashboard, fixed-window uptime summaries, Prometheus-compatible application metrics, HTTP monitor configuration, secure HTTP execution, durable scheduling and leases, bounded worker concurrency, check history, threshold-based current-state projection, and administration endpoints under `/api/v1/monitors`. Incidents, notifications, and the observability stack remain intentionally unimplemented. See [`api/openapi.yaml`](api/openapi.yaml) for the
 current API contract.
 
 PostgreSQL integration tests require an isolated database whose name ends in

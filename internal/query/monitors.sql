@@ -19,10 +19,13 @@ SELECT
     m.id, m.name, m.slug, m.description, m.kind, m.url, m.http_method,
     m.expected_status_min, m.expected_status_max, m.interval_seconds,
     m.timeout_ms, m.failure_threshold, m.recovery_threshold, m.enabled,
-    m.public, m.version, m.created_at, m.updated_at, m.archived_at,
-    s.state, s.updated_at AS state_updated_at
+    m.public, m.version, m.created_at, m.updated_at, m.archived_at, m.next_check_at,
+    s.state, s.updated_at AS state_updated_at, s.last_checked_at, s.last_outcome,
+    s.last_status_code, s.last_duration_ms, s.consecutive_failures,
+    s.consecutive_successes, r.tls_expires_at AS last_tls_expires_at
 FROM monitors m
 JOIN monitor_states s ON s.monitor_id = m.id
+LEFT JOIN check_results r ON r.id = s.last_check_result_id
 WHERE m.id = $1;
 
 -- name: ListMonitors :many
@@ -30,10 +33,13 @@ SELECT
     m.id, m.name, m.slug, m.description, m.kind, m.url, m.http_method,
     m.expected_status_min, m.expected_status_max, m.interval_seconds,
     m.timeout_ms, m.failure_threshold, m.recovery_threshold, m.enabled,
-    m.public, m.version, m.created_at, m.updated_at, m.archived_at,
-    s.state, s.updated_at AS state_updated_at
+    m.public, m.version, m.created_at, m.updated_at, m.archived_at, m.next_check_at,
+    s.state, s.updated_at AS state_updated_at, s.last_checked_at, s.last_outcome,
+    s.last_status_code, s.last_duration_ms, s.consecutive_failures,
+    s.consecutive_successes, r.tls_expires_at AS last_tls_expires_at
 FROM monitors m
 JOIN monitor_states s ON s.monitor_id = m.id
+LEFT JOIN check_results r ON r.id = s.last_check_result_id
 WHERE m.archived_at IS NULL
 ORDER BY m.created_at DESC, m.id DESC
 LIMIT $1 OFFSET $2;

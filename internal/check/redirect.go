@@ -58,7 +58,7 @@ func (e *Executor) executeHop(ctx context.Context, destination *url.URL, method 
 		return nil, nil, dialer, &hopFailure{OutcomeInternalError, ErrorCodeInternal, "failed to construct HTTP request"}
 	}
 	request.Host = destination.Host
-	request.Header.Set("User-Agent", UserAgent)
+	request.Header.Set("User-Agent", e.userAgent)
 
 	response, err := transport.RoundTrip(request)
 	if err != nil {

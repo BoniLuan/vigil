@@ -217,6 +217,10 @@ func monitorFromGet(row generated.GetMonitorRow) Monitor {
 		Enabled: row.Enabled, Public: row.Public, Version: row.Version, State: row.State,
 		CreatedAt: timestamp(row.CreatedAt), UpdatedAt: timestamp(row.UpdatedAt),
 		StateUpdatedAt: timestamp(row.StateUpdatedAt), ArchivedAt: timestampPointer(row.ArchivedAt),
+		NextCheckAt: timestampPointer(row.NextCheckAt), LastCheckedAt: timestampPointer(row.LastCheckedAt),
+		LastOutcome: stringPointer(row.LastOutcome), LastStatusCode: int16Pointer(row.LastStatusCode),
+		LastDuration: durationPointer(row.LastDurationMs), ConsecutiveFailures: row.ConsecutiveFailures,
+		ConsecutiveSuccesses: row.ConsecutiveSuccesses, LastTLSExpiresAt: timestampPointer(row.LastTlsExpiresAt),
 	}
 }
 
@@ -231,5 +235,25 @@ func monitorFromList(row generated.ListMonitorsRow) Monitor {
 		Enabled: row.Enabled, Public: row.Public, Version: row.Version, State: row.State,
 		CreatedAt: timestamp(row.CreatedAt), UpdatedAt: timestamp(row.UpdatedAt),
 		StateUpdatedAt: timestamp(row.StateUpdatedAt), ArchivedAt: timestampPointer(row.ArchivedAt),
+		NextCheckAt: timestampPointer(row.NextCheckAt), LastCheckedAt: timestampPointer(row.LastCheckedAt),
+		LastOutcome: stringPointer(row.LastOutcome), LastStatusCode: int16Pointer(row.LastStatusCode),
+		LastDuration: durationPointer(row.LastDurationMs), ConsecutiveFailures: row.ConsecutiveFailures,
+		ConsecutiveSuccesses: row.ConsecutiveSuccesses, LastTLSExpiresAt: timestampPointer(row.LastTlsExpiresAt),
 	}
+}
+
+func int16Pointer(value pgtype.Int2) *int {
+	if !value.Valid {
+		return nil
+	}
+	result := int(value.Int16)
+	return &result
+}
+
+func durationPointer(value pgtype.Int8) *time.Duration {
+	if !value.Valid {
+		return nil
+	}
+	result := time.Duration(value.Int64) * time.Millisecond
+	return &result
 }

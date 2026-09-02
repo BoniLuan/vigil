@@ -15,7 +15,7 @@ import (
 	"github.com/BoniLuan/vigil/internal/worker"
 )
 
-func Worker(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
+func Worker(ctx context.Context, cfg config.Config, build BuildInfo, logger *slog.Logger) error {
 	pool, err := database.Open(ctx, cfg)
 	if err != nil {
 		return err
@@ -31,7 +31,7 @@ func Worker(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	runner, err := worker.New(worker.Config{
 		Concurrency: cfg.WorkerConcurrency, PollInterval: cfg.WorkerPollInterval,
 		LeaseDuration: cfg.WorkerLeaseDuration, ShutdownGrace: cfg.ShutdownTimeout,
-	}, workerID, schedulerService, monitorService, check.NewExecutor(net.DefaultResolver),
+	}, workerID, schedulerService, monitorService, check.NewExecutorWithUserAgent(net.DefaultResolver, checkerUserAgent(build.Version)),
 		checkresult.NewService(pool), logger)
 	if err != nil {
 		return fmt.Errorf("configure worker: %w", err)

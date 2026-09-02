@@ -37,6 +37,14 @@ type Projection struct {
 	ConsecutiveSuccesses int64
 }
 
+type Summary struct {
+	Window           string
+	CompletedChecks  int64
+	SuccessfulChecks int64
+	UptimePercent    *float64
+	AverageLatency   *time.Duration
+}
+
 type ListOptions struct {
 	Limit  int
 	Offset int

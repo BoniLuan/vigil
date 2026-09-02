@@ -140,35 +140,46 @@ SELECT
     m.id, m.name, m.slug, m.description, m.kind, m.url, m.http_method,
     m.expected_status_min, m.expected_status_max, m.interval_seconds,
     m.timeout_ms, m.failure_threshold, m.recovery_threshold, m.enabled,
-    m.public, m.version, m.created_at, m.updated_at, m.archived_at,
-    s.state, s.updated_at AS state_updated_at
+    m.public, m.version, m.created_at, m.updated_at, m.archived_at, m.next_check_at,
+    s.state, s.updated_at AS state_updated_at, s.last_checked_at, s.last_outcome,
+    s.last_status_code, s.last_duration_ms, s.consecutive_failures,
+    s.consecutive_successes, r.tls_expires_at AS last_tls_expires_at
 FROM monitors m
 JOIN monitor_states s ON s.monitor_id = m.id
+LEFT JOIN check_results r ON r.id = s.last_check_result_id
 WHERE m.id = $1
 `
 
 type GetMonitorRow struct {
-	ID                uuid.UUID          `json:"id"`
-	Name              string             `json:"name"`
-	Slug              string             `json:"slug"`
-	Description       pgtype.Text        `json:"description"`
-	Kind              string             `json:"kind"`
-	Url               string             `json:"url"`
-	HttpMethod        string             `json:"http_method"`
-	ExpectedStatusMin int16              `json:"expected_status_min"`
-	ExpectedStatusMax int16              `json:"expected_status_max"`
-	IntervalSeconds   int32              `json:"interval_seconds"`
-	TimeoutMs         int32              `json:"timeout_ms"`
-	FailureThreshold  int16              `json:"failure_threshold"`
-	RecoveryThreshold int16              `json:"recovery_threshold"`
-	Enabled           bool               `json:"enabled"`
-	Public            bool               `json:"public"`
-	Version           int64              `json:"version"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-	ArchivedAt        pgtype.Timestamptz `json:"archived_at"`
-	State             string             `json:"state"`
-	StateUpdatedAt    pgtype.Timestamptz `json:"state_updated_at"`
+	ID                   uuid.UUID          `json:"id"`
+	Name                 string             `json:"name"`
+	Slug                 string             `json:"slug"`
+	Description          pgtype.Text        `json:"description"`
+	Kind                 string             `json:"kind"`
+	Url                  string             `json:"url"`
+	HttpMethod           string             `json:"http_method"`
+	ExpectedStatusMin    int16              `json:"expected_status_min"`
+	ExpectedStatusMax    int16              `json:"expected_status_max"`
+	IntervalSeconds      int32              `json:"interval_seconds"`
+	TimeoutMs            int32              `json:"timeout_ms"`
+	FailureThreshold     int16              `json:"failure_threshold"`
+	RecoveryThreshold    int16              `json:"recovery_threshold"`
+	Enabled              bool               `json:"enabled"`
+	Public               bool               `json:"public"`
+	Version              int64              `json:"version"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	ArchivedAt           pgtype.Timestamptz `json:"archived_at"`
+	NextCheckAt          pgtype.Timestamptz `json:"next_check_at"`
+	State                string             `json:"state"`
+	StateUpdatedAt       pgtype.Timestamptz `json:"state_updated_at"`
+	LastCheckedAt        pgtype.Timestamptz `json:"last_checked_at"`
+	LastOutcome          pgtype.Text        `json:"last_outcome"`
+	LastStatusCode       pgtype.Int2        `json:"last_status_code"`
+	LastDurationMs       pgtype.Int8        `json:"last_duration_ms"`
+	ConsecutiveFailures  int64              `json:"consecutive_failures"`
+	ConsecutiveSuccesses int64              `json:"consecutive_successes"`
+	LastTlsExpiresAt     pgtype.Timestamptz `json:"last_tls_expires_at"`
 }
 
 func (q *Queries) GetMonitor(ctx context.Context, id uuid.UUID) (GetMonitorRow, error) {
@@ -194,8 +205,16 @@ func (q *Queries) GetMonitor(ctx context.Context, id uuid.UUID) (GetMonitorRow, 
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ArchivedAt,
+		&i.NextCheckAt,
 		&i.State,
 		&i.StateUpdatedAt,
+		&i.LastCheckedAt,
+		&i.LastOutcome,
+		&i.LastStatusCode,
+		&i.LastDurationMs,
+		&i.ConsecutiveFailures,
+		&i.ConsecutiveSuccesses,
+		&i.LastTlsExpiresAt,
 	)
 	return i, err
 }
@@ -205,10 +224,13 @@ SELECT
     m.id, m.name, m.slug, m.description, m.kind, m.url, m.http_method,
     m.expected_status_min, m.expected_status_max, m.interval_seconds,
     m.timeout_ms, m.failure_threshold, m.recovery_threshold, m.enabled,
-    m.public, m.version, m.created_at, m.updated_at, m.archived_at,
-    s.state, s.updated_at AS state_updated_at
+    m.public, m.version, m.created_at, m.updated_at, m.archived_at, m.next_check_at,
+    s.state, s.updated_at AS state_updated_at, s.last_checked_at, s.last_outcome,
+    s.last_status_code, s.last_duration_ms, s.consecutive_failures,
+    s.consecutive_successes, r.tls_expires_at AS last_tls_expires_at
 FROM monitors m
 JOIN monitor_states s ON s.monitor_id = m.id
+LEFT JOIN check_results r ON r.id = s.last_check_result_id
 WHERE m.archived_at IS NULL
 ORDER BY m.created_at DESC, m.id DESC
 LIMIT $1 OFFSET $2
@@ -220,27 +242,35 @@ type ListMonitorsParams struct {
 }
 
 type ListMonitorsRow struct {
-	ID                uuid.UUID          `json:"id"`
-	Name              string             `json:"name"`
-	Slug              string             `json:"slug"`
-	Description       pgtype.Text        `json:"description"`
-	Kind              string             `json:"kind"`
-	Url               string             `json:"url"`
-	HttpMethod        string             `json:"http_method"`
-	ExpectedStatusMin int16              `json:"expected_status_min"`
-	ExpectedStatusMax int16              `json:"expected_status_max"`
-	IntervalSeconds   int32              `json:"interval_seconds"`
-	TimeoutMs         int32              `json:"timeout_ms"`
-	FailureThreshold  int16              `json:"failure_threshold"`
-	RecoveryThreshold int16              `json:"recovery_threshold"`
-	Enabled           bool               `json:"enabled"`
-	Public            bool               `json:"public"`
-	Version           int64              `json:"version"`
-	CreatedAt         pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
-	ArchivedAt        pgtype.Timestamptz `json:"archived_at"`
-	State             string             `json:"state"`
-	StateUpdatedAt    pgtype.Timestamptz `json:"state_updated_at"`
+	ID                   uuid.UUID          `json:"id"`
+	Name                 string             `json:"name"`
+	Slug                 string             `json:"slug"`
+	Description          pgtype.Text        `json:"description"`
+	Kind                 string             `json:"kind"`
+	Url                  string             `json:"url"`
+	HttpMethod           string             `json:"http_method"`
+	ExpectedStatusMin    int16              `json:"expected_status_min"`
+	ExpectedStatusMax    int16              `json:"expected_status_max"`
+	IntervalSeconds      int32              `json:"interval_seconds"`
+	TimeoutMs            int32              `json:"timeout_ms"`
+	FailureThreshold     int16              `json:"failure_threshold"`
+	RecoveryThreshold    int16              `json:"recovery_threshold"`
+	Enabled              bool               `json:"enabled"`
+	Public               bool               `json:"public"`
+	Version              int64              `json:"version"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	ArchivedAt           pgtype.Timestamptz `json:"archived_at"`
+	NextCheckAt          pgtype.Timestamptz `json:"next_check_at"`
+	State                string             `json:"state"`
+	StateUpdatedAt       pgtype.Timestamptz `json:"state_updated_at"`
+	LastCheckedAt        pgtype.Timestamptz `json:"last_checked_at"`
+	LastOutcome          pgtype.Text        `json:"last_outcome"`
+	LastStatusCode       pgtype.Int2        `json:"last_status_code"`
+	LastDurationMs       pgtype.Int8        `json:"last_duration_ms"`
+	ConsecutiveFailures  int64              `json:"consecutive_failures"`
+	ConsecutiveSuccesses int64              `json:"consecutive_successes"`
+	LastTlsExpiresAt     pgtype.Timestamptz `json:"last_tls_expires_at"`
 }
 
 func (q *Queries) ListMonitors(ctx context.Context, arg ListMonitorsParams) ([]ListMonitorsRow, error) {
@@ -272,8 +302,16 @@ func (q *Queries) ListMonitors(ctx context.Context, arg ListMonitorsParams) ([]L
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.ArchivedAt,
+			&i.NextCheckAt,
 			&i.State,
 			&i.StateUpdatedAt,
+			&i.LastCheckedAt,
+			&i.LastOutcome,
+			&i.LastStatusCode,
+			&i.LastDurationMs,
+			&i.ConsecutiveFailures,
+			&i.ConsecutiveSuccesses,
+			&i.LastTlsExpiresAt,
 		); err != nil {
 			return nil, err
 		}

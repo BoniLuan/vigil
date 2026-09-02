@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/BoniLuan/vigil/internal/adminui"
+	"github.com/BoniLuan/vigil/internal/appmetrics"
 	"github.com/BoniLuan/vigil/internal/checkresult"
 	checkresultapi "github.com/BoniLuan/vigil/internal/checkresult/httpapi"
 	"github.com/BoniLuan/vigil/internal/monitor"
@@ -17,7 +19,7 @@ import (
 	"github.com/BoniLuan/vigil/internal/platform/database"
 )
 
-func API(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
+func API(ctx context.Context, cfg config.Config, build BuildInfo, logger *slog.Logger) error {
 	pool, err := database.Open(ctx, cfg)
 	if err != nil {
 		return err
@@ -29,7 +31,15 @@ func API(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	mux := http.NewServeMux()
 	monitorService := monitor.NewService(monitor.NewStore(pool))
 	monitorapi.New(monitorService, logger).Register(mux)
-	checkresultapi.New(checkresult.NewService(pool), logger).Register(mux)
+	resultService := checkresult.NewService(pool)
+	checkresultapi.New(resultService, logger).Register(mux)
+	admin, err := adminui.New(monitorService, resultService, logger)
+	if err != nil {
+		return fmt.Errorf("initialize admin UI: %w", err)
+	}
+	admin.Register(mux)
+	metrics := appmetrics.New(pool, appmetrics.BuildInfo{Version: build.Version, Commit: build.Commit, Role: "api"})
+	mux.Handle("GET /metrics", metrics.Handler())
 	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
@@ -52,7 +62,7 @@ func API(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           mux,
+		Handler:           metrics.Instrument(mux),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,

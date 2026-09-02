@@ -38,6 +38,58 @@ func (q *Queries) GetCheckResultByExecution(ctx context.Context, executionID pgt
 	return i, err
 }
 
+const getMonitorSummaries = `-- name: GetMonitorSummaries :many
+SELECT '24h'::text AS window, 1::integer AS sort_order,
+       count(*)::bigint AS completed_checks,
+       count(*) FILTER (WHERE results.outcome = 'success')::bigint AS successful_checks,
+       COALESCE(avg(results.duration_ms), 0)::double precision AS average_duration_ms
+FROM check_results AS results WHERE results.monitor_id = $1 AND results.finished_at >= transaction_timestamp() - interval '24 hours'
+UNION ALL
+SELECT '7d', 2, count(*)::bigint, count(*) FILTER (WHERE results.outcome = 'success')::bigint, COALESCE(avg(results.duration_ms), 0)::double precision
+FROM check_results AS results WHERE results.monitor_id = $1 AND results.finished_at >= transaction_timestamp() - interval '7 days'
+UNION ALL
+SELECT '30d', 3, count(*)::bigint, count(*) FILTER (WHERE results.outcome = 'success')::bigint, COALESCE(avg(results.duration_ms), 0)::double precision
+FROM check_results AS results WHERE results.monitor_id = $1 AND results.finished_at >= transaction_timestamp() - interval '30 days'
+UNION ALL
+SELECT '90d', 4, count(*)::bigint, count(*) FILTER (WHERE results.outcome = 'success')::bigint, COALESCE(avg(results.duration_ms), 0)::double precision
+FROM check_results AS results WHERE results.monitor_id = $1 AND results.finished_at >= transaction_timestamp() - interval '90 days'
+ORDER BY sort_order
+`
+
+type GetMonitorSummariesRow struct {
+	Window            string  `json:"window"`
+	SortOrder         int32   `json:"sort_order"`
+	CompletedChecks   int64   `json:"completed_checks"`
+	SuccessfulChecks  int64   `json:"successful_checks"`
+	AverageDurationMs float64 `json:"average_duration_ms"`
+}
+
+func (q *Queries) GetMonitorSummaries(ctx context.Context, targetMonitorID uuid.UUID) ([]GetMonitorSummariesRow, error) {
+	rows, err := q.db.Query(ctx, getMonitorSummaries, targetMonitorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetMonitorSummariesRow{}
+	for rows.Next() {
+		var i GetMonitorSummariesRow
+		if err := rows.Scan(
+			&i.Window,
+			&i.SortOrder,
+			&i.CompletedChecks,
+			&i.SuccessfulChecks,
+			&i.AverageDurationMs,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const insertCheckResult = `-- name: InsertCheckResult :one
 INSERT INTO check_results (
     id, monitor_id, execution_id, started_at, finished_at, duration_ms, outcome,
