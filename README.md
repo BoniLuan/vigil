@@ -6,10 +6,9 @@ track their availability and latency, manage incidents, and publish a focused
 service-status experience. A standard Prometheus and Grafana stack will provide
 host and container observability alongside it.
 
-The architecture baseline is approved and the **v0.1 foundation milestone** is
-in progress. The repository currently contains process/configuration/logging,
-PostgreSQL connectivity, and migration foundations only; monitoring features
-have not started.
+Vigil now has an end-to-end v0.1 monitoring path: durable PostgreSQL scheduling,
+a bounded worker runtime, the security-hardened HTTP checker, atomic history and
+current-state projection, and monitor administration APIs.
 
 ## Planned shape
 
@@ -24,6 +23,7 @@ have not started.
 - [Architecture and technical decisions](docs/ARCHITECTURE.md)
 - [Release roadmap and implementation order](docs/ROADMAP.md)
 - [Architecture decision records](docs/adr/README.md)
+- [Worker runtime and lifecycle](docs/WORKER.md)
 
 ## Foundation commands
 
@@ -35,6 +35,8 @@ loader. Vigil deliberately does not parse `.env` files itself.
 make db-up
 make migrate
 go run ./cmd/vigil api
+# In a separate process:
+go run ./cmd/vigil worker
 ```
 
 Available process commands are:
@@ -56,7 +58,7 @@ make lint
 make build
 ```
 
-Vigil now implements HTTP monitor configuration, the security-hardened HTTP checker, durable check history, threshold-based current-state projection, and administration endpoints under `/api/v1/monitors`. Durable scheduler claims and leases are implemented as callable primitives; checker composition, the worker pool, incidents, and notifications remain intentionally unimplemented. See [`api/openapi.yaml`](api/openapi.yaml) for the
+Vigil implements HTTP monitor configuration, secure HTTP execution, durable scheduling and leases, bounded worker concurrency, check history, threshold-based current-state projection, and administration endpoints under `/api/v1/monitors`. Incidents, notifications, and the observability stack remain intentionally unimplemented. See [`api/openapi.yaml`](api/openapi.yaml) for the
 current API contract.
 
 PostgreSQL integration tests require an isolated database whose name ends in

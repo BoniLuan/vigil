@@ -27,6 +27,30 @@ func (q *Queries) AdvanceMonitorSchedule(ctx context.Context, id uuid.UUID) erro
 	return err
 }
 
+const canStartScheduledExecution = `-- name: CanStartScheduledExecution :one
+SELECT EXISTS(
+    SELECT 1
+    FROM scheduled_executions
+    WHERE id = $1
+      AND status = 'claimed'
+      AND lease_owner = $2
+      AND lease_expires_at >= transaction_timestamp() + ($3::double precision * interval '1 second')
+)
+`
+
+type CanStartScheduledExecutionParams struct {
+	ExecutionID     uuid.UUID   `json:"execution_id"`
+	LeaseOwner      pgtype.UUID `json:"lease_owner"`
+	RequiredSeconds float64     `json:"required_seconds"`
+}
+
+func (q *Queries) CanStartScheduledExecution(ctx context.Context, arg CanStartScheduledExecutionParams) (bool, error) {
+	row := q.db.QueryRow(ctx, canStartScheduledExecution, arg.ExecutionID, arg.LeaseOwner, arg.RequiredSeconds)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const claimAvailableExecutions = `-- name: ClaimAvailableExecutions :many
 WITH claimable AS (
     SELECT e.id

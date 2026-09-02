@@ -11,33 +11,42 @@ import (
 )
 
 type Config struct {
-	Environment      string
-	LogLevel         string
-	LogFormat        string
-	HTTPAddr         string
-	ShutdownTimeout  time.Duration
-	DatabaseURL      string
-	DatabaseMaxConns int32
-	DatabaseMinConns int32
-	DatabaseTimeout  time.Duration
+	Environment         string
+	LogLevel            string
+	LogFormat           string
+	HTTPAddr            string
+	ShutdownTimeout     time.Duration
+	DatabaseURL         string
+	DatabaseMaxConns    int32
+	DatabaseMinConns    int32
+	DatabaseTimeout     time.Duration
+	WorkerConcurrency   int
+	WorkerPollInterval  time.Duration
+	WorkerLeaseDuration time.Duration
 }
 
 func Load() (Config, error) {
 	cfg := Config{
-		Environment:      env("VIGIL_ENV", "development"),
-		LogLevel:         env("VIGIL_LOG_LEVEL", "info"),
-		LogFormat:        env("VIGIL_LOG_FORMAT", "json"),
-		HTTPAddr:         env("VIGIL_HTTP_ADDR", ":8080"),
-		DatabaseURL:      strings.TrimSpace(os.Getenv("VIGIL_DATABASE_URL")),
-		DatabaseMaxConns: 10,
-		DatabaseMinConns: 1,
+		Environment:       env("VIGIL_ENV", "development"),
+		LogLevel:          env("VIGIL_LOG_LEVEL", "info"),
+		LogFormat:         env("VIGIL_LOG_FORMAT", "json"),
+		HTTPAddr:          env("VIGIL_HTTP_ADDR", ":8080"),
+		DatabaseURL:       strings.TrimSpace(os.Getenv("VIGIL_DATABASE_URL")),
+		DatabaseMaxConns:  10,
+		DatabaseMinConns:  1,
+		WorkerConcurrency: 5,
 	}
 
 	var errs []error
-	cfg.ShutdownTimeout, errs = duration("VIGIL_SHUTDOWN_TIMEOUT", 10*time.Second, errs)
+	cfg.ShutdownTimeout, errs = duration("VIGIL_SHUTDOWN_TIMEOUT", 35*time.Second, errs)
 	cfg.DatabaseTimeout, errs = duration("VIGIL_DATABASE_CONNECT_TIMEOUT", 5*time.Second, errs)
+	cfg.WorkerPollInterval, errs = duration("VIGIL_WORKER_POLL_INTERVAL", time.Second, errs)
+	cfg.WorkerLeaseDuration, errs = duration("VIGIL_WORKER_LEASE_DURATION", 45*time.Second, errs)
 	cfg.DatabaseMaxConns, errs = integer("VIGIL_DATABASE_MAX_CONNS", cfg.DatabaseMaxConns, errs)
 	cfg.DatabaseMinConns, errs = integer("VIGIL_DATABASE_MIN_CONNS", cfg.DatabaseMinConns, errs)
+	workerConcurrency, nextErrs := integer("VIGIL_WORKER_CONCURRENCY", int32(cfg.WorkerConcurrency), errs)
+	errs = nextErrs
+	cfg.WorkerConcurrency = int(workerConcurrency)
 
 	if cfg.DatabaseURL == "" {
 		errs = append(errs, errors.New("VIGIL_DATABASE_URL is required"))
@@ -58,6 +67,15 @@ func Load() (Config, error) {
 	}
 	if cfg.DatabaseMinConns < 0 || cfg.DatabaseMinConns > cfg.DatabaseMaxConns {
 		errs = append(errs, errors.New("VIGIL_DATABASE_MIN_CONNS must be between 0 and VIGIL_DATABASE_MAX_CONNS"))
+	}
+	if cfg.WorkerConcurrency < 1 || cfg.WorkerConcurrency > 100 {
+		errs = append(errs, errors.New("VIGIL_WORKER_CONCURRENCY must be between 1 and 100"))
+	}
+	if cfg.WorkerPollInterval <= 0 {
+		errs = append(errs, errors.New("VIGIL_WORKER_POLL_INTERVAL must be positive"))
+	}
+	if cfg.WorkerLeaseDuration < 35*time.Second {
+		errs = append(errs, errors.New("VIGIL_WORKER_LEASE_DURATION must be at least 35s"))
 	}
 
 	return cfg, errors.Join(errs...)

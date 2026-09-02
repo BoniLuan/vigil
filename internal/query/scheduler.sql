@@ -73,3 +73,13 @@ SELECT * FROM scheduled_executions WHERE id = $1;
 UPDATE scheduled_executions
 SET status = 'skipped', finished_at = transaction_timestamp(), updated_at = now()
 WHERE monitor_id = $1 AND status = 'pending';
+
+-- name: CanStartScheduledExecution :one
+SELECT EXISTS(
+    SELECT 1
+    FROM scheduled_executions
+    WHERE id = sqlc.arg(execution_id)
+      AND status = 'claimed'
+      AND lease_owner = sqlc.arg(lease_owner)
+      AND lease_expires_at >= transaction_timestamp() + (sqlc.arg(required_seconds)::double precision * interval '1 second')
+);

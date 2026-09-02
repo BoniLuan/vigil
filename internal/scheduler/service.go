@@ -46,6 +46,19 @@ func (s *Service) ClaimDue(ctx context.Context, workerID uuid.UUID, options Clai
 	return result, nil
 }
 
+func (s *Service) CanStartExecution(ctx context.Context, executionID, workerID uuid.UUID, required time.Duration) (bool, error) {
+	if executionID == uuid.Nil || workerID == uuid.Nil || required <= 0 {
+		return false, ErrInvalidClaimOptions
+	}
+	allowed, err := s.queries.CanStartScheduledExecution(ctx, generated.CanStartScheduledExecutionParams{
+		ExecutionID: executionID, LeaseOwner: pgtype.UUID{Bytes: workerID, Valid: true}, RequiredSeconds: required.Seconds(),
+	})
+	if err != nil {
+		return false, fmt.Errorf("verify scheduled execution start lease: %w", err)
+	}
+	return allowed, nil
+}
+
 func (s *Service) Get(ctx context.Context, id uuid.UUID) (Execution, error) {
 	row, err := s.queries.GetScheduledExecution(ctx, id)
 	if errors.Is(err, pgx.ErrNoRows) {

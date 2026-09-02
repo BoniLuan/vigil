@@ -13,8 +13,11 @@ func TestLoadDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if cfg.HTTPAddr != ":8080" || cfg.ShutdownTimeout != 10*time.Second {
+	if cfg.HTTPAddr != ":8080" || cfg.ShutdownTimeout != 35*time.Second {
 		t.Fatalf("unexpected defaults: %+v", cfg)
+	}
+	if cfg.WorkerConcurrency != 5 || cfg.WorkerPollInterval != time.Second || cfg.WorkerLeaseDuration != 45*time.Second {
+		t.Fatalf("unexpected worker defaults: %+v", cfg)
 	}
 	if cfg.DatabaseMaxConns != 10 || cfg.DatabaseMinConns != 1 {
 		t.Fatalf("unexpected pool defaults: %+v", cfg)
@@ -45,5 +48,22 @@ func TestLoadRejectsMinGreaterThanMax(t *testing.T) {
 	_, err := Load()
 	if err == nil || !strings.Contains(err.Error(), "VIGIL_DATABASE_MIN_CONNS") {
 		t.Fatalf("Load() error = %v", err)
+	}
+}
+
+func TestLoadRejectsInvalidWorkerConfiguration(t *testing.T) {
+	t.Setenv("VIGIL_DATABASE_URL", "postgres://vigil:secret@db:5432/vigil")
+	t.Setenv("VIGIL_WORKER_CONCURRENCY", "101")
+	t.Setenv("VIGIL_WORKER_POLL_INTERVAL", "0s")
+	t.Setenv("VIGIL_WORKER_LEASE_DURATION", "34s")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() error = nil")
+	}
+	for _, want := range []string{"VIGIL_WORKER_CONCURRENCY", "VIGIL_WORKER_POLL_INTERVAL", "VIGIL_WORKER_LEASE_DURATION"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Load() error %q does not contain %q", err, want)
+		}
 	}
 }

@@ -43,3 +43,13 @@ There is no catch-up storm after downtime and no process-local deduplication.
 The worker must use completion with its execution and worker IDs; unscheduled
 `ApplyResult` remains compatible for manual use but stops advancing projection
 once scheduled projection history exists.
+
+## Runtime composition
+
+The worker claims only its currently free execution capacity and does not queue
+leased work locally. It reloads monitor configuration immediately before a
+check. A database-time guard requires the monitor timeout plus a five-second
+completion margin to remain on the lease; otherwise execution waits for expiry
+and reclaim without creating a result. The 45-second default lease therefore
+covers the 30-second maximum check timeout and completion overhead without a
+lease-renewal protocol.
