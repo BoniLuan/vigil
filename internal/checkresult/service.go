@@ -10,6 +10,7 @@ import (
 	"github.com/BoniLuan/vigil/internal/check"
 	"github.com/BoniLuan/vigil/internal/monitor"
 	generated "github.com/BoniLuan/vigil/internal/platform/database/db"
+	"github.com/BoniLuan/vigil/internal/scheduler"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -25,57 +26,103 @@ func NewService(pool *pgxpool.Pool) *Service {
 	return &Service{pool: pool, queries: generated.New(pool)}
 }
 
+// ApplyResult keeps manually initiated results supported. Once a scheduled
+// result has advanced a projection, later unscheduled results remain history
+// only so they cannot bypass schedule ordering.
 func (s *Service) ApplyResult(ctx context.Context, completed check.Result) (StoredResult, Projection, error) {
 	prepared, err := prepare(completed)
 	if err != nil {
 		return StoredResult{}, Projection{}, err
 	}
-	id, err := uuid.NewV7()
+	resultID, err := uuid.NewV7()
 	if err != nil {
 		return StoredResult{}, Projection{}, fmt.Errorf("generate check result id: %w", err)
 	}
-
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return StoredResult{}, Projection{}, fmt.Errorf("begin apply check result transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	q := s.queries.WithTx(tx)
-	locked, err := q.LockMonitorProjection(ctx, completed.MonitorID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return StoredResult{}, Projection{}, monitor.ErrNotFound
-	}
+	locked, err := lockProjection(ctx, q, completed.MonitorID)
 	if err != nil {
-		return StoredResult{}, Projection{}, fmt.Errorf("lock monitor projection: %w", err)
+		return StoredResult{}, Projection{}, err
 	}
-
-	row, err := q.InsertCheckResult(ctx, insertParams(id, completed.MonitorID, prepared))
+	row, projection, err := applyPrepared(ctx, q, locked, resultID, uuid.Nil, nil, prepared)
 	if err != nil {
-		return StoredResult{}, Projection{}, fmt.Errorf("insert check result: %w", err)
-	}
-	projection := Projection{
-		State: locked.State, ConsecutiveFailures: locked.ConsecutiveFailures,
-		ConsecutiveSuccesses: locked.ConsecutiveSuccesses,
-	}
-	if !locked.ArchivedAt.Valid {
-		projection = NextProjection(projection, prepared.Outcome, int(locked.FailureThreshold), int(locked.RecoveryThreshold))
-	}
-	if err := q.UpdateMonitorProjection(ctx, generated.UpdateMonitorProjectionParams{
-		MonitorID: completed.MonitorID, State: projection.State,
-		LastCheckResultID:    pgtype.UUID{Bytes: id, Valid: true},
-		LastCheckedAt:        pgtype.Timestamptz{Time: prepared.FinishedAt, Valid: true},
-		LastOutcome:          pgtype.Text{String: string(prepared.Outcome), Valid: true},
-		LastStatusCode:       int2(prepared.StatusCode),
-		LastDurationMs:       pgtype.Int8{Int64: prepared.Duration.Milliseconds(), Valid: true},
-		ConsecutiveFailures:  projection.ConsecutiveFailures,
-		ConsecutiveSuccesses: projection.ConsecutiveSuccesses,
-	}); err != nil {
-		return StoredResult{}, Projection{}, fmt.Errorf("update monitor projection: %w", err)
+		return StoredResult{}, Projection{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return StoredResult{}, Projection{}, fmt.Errorf("commit check result: %w", err)
 	}
 	return stored(row), projection, nil
+}
+
+// CompleteExecution atomically records one result, conditionally advances the
+// ordered projection, and completes the owned execution. A retry after a
+// successful commit returns the existing result without applying it again.
+func (s *Service) CompleteExecution(ctx context.Context, executionID, workerID uuid.UUID, completed check.Result) (StoredResult, error) {
+	if executionID == uuid.Nil || workerID == uuid.Nil {
+		return StoredResult{}, ErrExecutionNotClaimed
+	}
+	prepared, err := prepare(completed)
+	if err != nil {
+		return StoredResult{}, err
+	}
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return StoredResult{}, fmt.Errorf("begin complete execution transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := s.queries.WithTx(tx)
+	execution, err := q.LockScheduledExecution(ctx, executionID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return StoredResult{}, ErrExecutionNotFound
+	}
+	if err != nil {
+		return StoredResult{}, fmt.Errorf("lock scheduled execution: %w", err)
+	}
+	if execution.Status == scheduler.StatusCompleted {
+		row, err := q.GetCheckResultByExecution(ctx, pgtype.UUID{Bytes: executionID, Valid: true})
+		if err != nil {
+			return StoredResult{}, fmt.Errorf("read completed execution result: %w", err)
+		}
+		return stored(row), nil
+	}
+	if execution.Status != scheduler.StatusClaimed {
+		return StoredResult{}, ErrExecutionNotClaimed
+	}
+	owner := uuid.UUID(execution.LeaseOwner.Bytes)
+	leaseActive, err := q.ScheduledExecutionLeaseActive(ctx, executionID)
+	if err != nil {
+		return StoredResult{}, fmt.Errorf("verify scheduled execution lease: %w", err)
+	}
+	if !execution.LeaseOwner.Valid || owner != workerID || !leaseActive {
+		return StoredResult{}, ErrLeaseLost
+	}
+	if prepared.MonitorID != execution.MonitorID {
+		return StoredResult{}, ErrInvalidResult
+	}
+	locked, err := lockProjection(ctx, q, execution.MonitorID)
+	if err != nil {
+		return StoredResult{}, err
+	}
+	resultID, err := uuid.NewV7()
+	if err != nil {
+		return StoredResult{}, fmt.Errorf("generate check result id: %w", err)
+	}
+	scheduledAt := timestamp(execution.ScheduledAt)
+	row, _, err := applyPrepared(ctx, q, locked, resultID, executionID, &scheduledAt, prepared)
+	if err != nil {
+		return StoredResult{}, err
+	}
+	if _, err := q.CompleteScheduledExecution(ctx, executionID); err != nil {
+		return StoredResult{}, fmt.Errorf("mark scheduled execution completed: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return StoredResult{}, fmt.Errorf("commit scheduled execution completion: %w", err)
+	}
+	return stored(row), nil
 }
 
 func (s *Service) List(ctx context.Context, monitorID uuid.UUID, options ListOptions) ([]StoredResult, error) {
@@ -106,6 +153,58 @@ func (s *Service) List(ctx context.Context, monitorID uuid.UUID, options ListOpt
 		results = append(results, stored(row))
 	}
 	return results, nil
+}
+
+func lockProjection(ctx context.Context, q *generated.Queries, monitorID uuid.UUID) (generated.LockMonitorProjectionRow, error) {
+	locked, err := q.LockMonitorProjection(ctx, monitorID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return generated.LockMonitorProjectionRow{}, monitor.ErrNotFound
+	}
+	if err != nil {
+		return generated.LockMonitorProjectionRow{}, fmt.Errorf("lock monitor projection: %w", err)
+	}
+	return locked, nil
+}
+
+func applyPrepared(ctx context.Context, q *generated.Queries, locked generated.LockMonitorProjectionRow, resultID, executionID uuid.UUID, scheduledAt *time.Time, prepared check.Result) (generated.CheckResult, Projection, error) {
+	row, err := q.InsertCheckResult(ctx, insertParams(resultID, prepared.MonitorID, executionID, prepared))
+	if err != nil {
+		return generated.CheckResult{}, Projection{}, fmt.Errorf("insert check result: %w", err)
+	}
+	projection := Projection{
+		State: locked.State, ConsecutiveFailures: locked.ConsecutiveFailures,
+		ConsecutiveSuccesses: locked.ConsecutiveSuccesses,
+	}
+	shouldApply := false
+	lastApplied := locked.LastAppliedScheduledAt
+	if scheduledAt != nil {
+		shouldApply = !lastApplied.Valid || scheduledAt.After(lastApplied.Time)
+	} else {
+		shouldApply = !lastApplied.Valid
+	}
+	if !shouldApply {
+		return row, projection, nil
+	}
+	if !locked.ArchivedAt.Valid {
+		projection = NextProjection(projection, prepared.Outcome, int(locked.FailureThreshold), int(locked.RecoveryThreshold))
+	}
+	if scheduledAt != nil {
+		lastApplied = pgtype.Timestamptz{Time: scheduledAt.UTC(), Valid: true}
+	}
+	if err := q.UpdateMonitorProjection(ctx, generated.UpdateMonitorProjectionParams{
+		MonitorID: prepared.MonitorID, State: projection.State,
+		LastCheckResultID:      pgtype.UUID{Bytes: resultID, Valid: true},
+		LastCheckedAt:          pgtype.Timestamptz{Time: prepared.FinishedAt, Valid: true},
+		LastOutcome:            pgtype.Text{String: string(prepared.Outcome), Valid: true},
+		LastStatusCode:         int2(prepared.StatusCode),
+		LastDurationMs:         pgtype.Int8{Int64: prepared.Duration.Milliseconds(), Valid: true},
+		ConsecutiveFailures:    projection.ConsecutiveFailures,
+		ConsecutiveSuccesses:   projection.ConsecutiveSuccesses,
+		LastAppliedScheduledAt: lastApplied,
+	}); err != nil {
+		return generated.CheckResult{}, Projection{}, fmt.Errorf("update monitor projection: %w", err)
+	}
+	return row, projection, nil
 }
 
 func prepare(value check.Result) (check.Result, error) {
@@ -139,9 +238,9 @@ func prepare(value check.Result) (check.Result, error) {
 	return value, nil
 }
 
-func insertParams(id, monitorID uuid.UUID, value check.Result) generated.InsertCheckResultParams {
+func insertParams(id, monitorID, executionID uuid.UUID, value check.Result) generated.InsertCheckResultParams {
 	params := generated.InsertCheckResultParams{
-		ID: id, MonitorID: monitorID,
+		ID: id, MonitorID: monitorID, ExecutionID: pgtype.UUID{Bytes: executionID, Valid: executionID != uuid.Nil},
 		StartedAt:  pgtype.Timestamptz{Time: value.StartedAt, Valid: true},
 		FinishedAt: pgtype.Timestamptz{Time: value.FinishedAt, Valid: true},
 		DurationMs: value.Duration.Milliseconds(), Outcome: string(value.Outcome),
@@ -160,9 +259,10 @@ func insertParams(id, monitorID uuid.UUID, value check.Result) generated.InsertC
 
 func stored(row generated.CheckResult) StoredResult {
 	result := StoredResult{
-		ID: row.ID, MonitorID: row.MonitorID, StartedAt: timestamp(row.StartedAt),
-		FinishedAt: timestamp(row.FinishedAt), Duration: time.Duration(row.DurationMs) * time.Millisecond,
-		Outcome: check.Outcome(row.Outcome), StatusCode: integer(row.StatusCode),
+		ID: row.ID, MonitorID: row.MonitorID, ExecutionID: uuidResultPointer(row.ExecutionID),
+		StartedAt: timestamp(row.StartedAt), FinishedAt: timestamp(row.FinishedAt),
+		Duration: time.Duration(row.DurationMs) * time.Millisecond,
+		Outcome:  check.Outcome(row.Outcome), StatusCode: integer(row.StatusCode),
 		TLSExpiresAt: timestampPointer(row.TlsExpiresAt), CreatedAt: timestamp(row.CreatedAt),
 	}
 	if row.ErrorCode.Valid {
@@ -174,6 +274,14 @@ func stored(row generated.CheckResult) StoredResult {
 		result.DialedIP = &address
 	}
 	return result
+}
+
+func uuidResultPointer(value pgtype.UUID) *uuid.UUID {
+	if !value.Valid {
+		return nil
+	}
+	result := uuid.UUID(value.Bytes)
+	return &result
 }
 
 func int2(value *int) pgtype.Int2 {

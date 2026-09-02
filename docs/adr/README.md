@@ -16,3 +16,4 @@ to make history appear different.
 | [0008](0008-ignore-environment-proxies-for-checks.md) | Ignore environment proxies for checks | Accepted |
 | [0009](0009-secure-redirect-handling.md) | Revalidate every HTTP redirect destination | Accepted |
 | [0010](0010-archive-monitors-with-history.md) | Archive monitors with check history | Accepted |
+| [0011](0011-durable-scheduling-and-ordered-completion.md) | Durable scheduling and ordered completion | Accepted |

@@ -13,20 +13,46 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const getCheckResultByExecution = `-- name: GetCheckResultByExecution :one
+SELECT id, monitor_id, started_at, finished_at, duration_ms, outcome, status_code, error_code, error_description, dialed_ip, tls_expires_at, created_at, execution_id FROM check_results WHERE execution_id = $1
+`
+
+func (q *Queries) GetCheckResultByExecution(ctx context.Context, executionID pgtype.UUID) (CheckResult, error) {
+	row := q.db.QueryRow(ctx, getCheckResultByExecution, executionID)
+	var i CheckResult
+	err := row.Scan(
+		&i.ID,
+		&i.MonitorID,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.DurationMs,
+		&i.Outcome,
+		&i.StatusCode,
+		&i.ErrorCode,
+		&i.ErrorDescription,
+		&i.DialedIp,
+		&i.TlsExpiresAt,
+		&i.CreatedAt,
+		&i.ExecutionID,
+	)
+	return i, err
+}
+
 const insertCheckResult = `-- name: InsertCheckResult :one
 INSERT INTO check_results (
-    id, monitor_id, started_at, finished_at, duration_ms, outcome,
+    id, monitor_id, execution_id, started_at, finished_at, duration_ms, outcome,
     status_code, error_code, error_description, dialed_ip, tls_expires_at
 ) VALUES (
-    $1, $2, $3, $4, $5, $6,
-    $7, $8, $9, $10, $11
+    $1, $2, $3, $4, $5, $6, $7,
+    $8, $9, $10, $11, $12
 )
-RETURNING id, monitor_id, started_at, finished_at, duration_ms, outcome, status_code, error_code, error_description, dialed_ip, tls_expires_at, created_at
+RETURNING id, monitor_id, started_at, finished_at, duration_ms, outcome, status_code, error_code, error_description, dialed_ip, tls_expires_at, created_at, execution_id
 `
 
 type InsertCheckResultParams struct {
 	ID               uuid.UUID          `json:"id"`
 	MonitorID        uuid.UUID          `json:"monitor_id"`
+	ExecutionID      pgtype.UUID        `json:"execution_id"`
 	StartedAt        pgtype.Timestamptz `json:"started_at"`
 	FinishedAt       pgtype.Timestamptz `json:"finished_at"`
 	DurationMs       int64              `json:"duration_ms"`
@@ -42,6 +68,7 @@ func (q *Queries) InsertCheckResult(ctx context.Context, arg InsertCheckResultPa
 	row := q.db.QueryRow(ctx, insertCheckResult,
 		arg.ID,
 		arg.MonitorID,
+		arg.ExecutionID,
 		arg.StartedAt,
 		arg.FinishedAt,
 		arg.DurationMs,
@@ -66,12 +93,13 @@ func (q *Queries) InsertCheckResult(ctx context.Context, arg InsertCheckResultPa
 		&i.DialedIp,
 		&i.TlsExpiresAt,
 		&i.CreatedAt,
+		&i.ExecutionID,
 	)
 	return i, err
 }
 
 const listCheckResults = `-- name: ListCheckResults :many
-SELECT id, monitor_id, started_at, finished_at, duration_ms, outcome, status_code, error_code, error_description, dialed_ip, tls_expires_at, created_at
+SELECT id, monitor_id, started_at, finished_at, duration_ms, outcome, status_code, error_code, error_description, dialed_ip, tls_expires_at, created_at, execution_id
 FROM check_results
 WHERE monitor_id = $1
 ORDER BY started_at DESC, id DESC
@@ -106,6 +134,7 @@ func (q *Queries) ListCheckResults(ctx context.Context, arg ListCheckResultsPara
 			&i.DialedIp,
 			&i.TlsExpiresAt,
 			&i.CreatedAt,
+			&i.ExecutionID,
 		); err != nil {
 			return nil, err
 		}
@@ -120,7 +149,7 @@ func (q *Queries) ListCheckResults(ctx context.Context, arg ListCheckResultsPara
 const lockMonitorProjection = `-- name: LockMonitorProjection :one
 SELECT
     m.id, m.failure_threshold, m.recovery_threshold, m.archived_at,
-    s.state, s.consecutive_failures, s.consecutive_successes
+    s.state, s.consecutive_failures, s.consecutive_successes, s.last_applied_scheduled_at
 FROM monitors m
 JOIN monitor_states s ON s.monitor_id = m.id
 WHERE m.id = $1
@@ -128,13 +157,14 @@ FOR UPDATE OF m, s
 `
 
 type LockMonitorProjectionRow struct {
-	ID                   uuid.UUID          `json:"id"`
-	FailureThreshold     int16              `json:"failure_threshold"`
-	RecoveryThreshold    int16              `json:"recovery_threshold"`
-	ArchivedAt           pgtype.Timestamptz `json:"archived_at"`
-	State                string             `json:"state"`
-	ConsecutiveFailures  int64              `json:"consecutive_failures"`
-	ConsecutiveSuccesses int64              `json:"consecutive_successes"`
+	ID                     uuid.UUID          `json:"id"`
+	FailureThreshold       int16              `json:"failure_threshold"`
+	RecoveryThreshold      int16              `json:"recovery_threshold"`
+	ArchivedAt             pgtype.Timestamptz `json:"archived_at"`
+	State                  string             `json:"state"`
+	ConsecutiveFailures    int64              `json:"consecutive_failures"`
+	ConsecutiveSuccesses   int64              `json:"consecutive_successes"`
+	LastAppliedScheduledAt pgtype.Timestamptz `json:"last_applied_scheduled_at"`
 }
 
 func (q *Queries) LockMonitorProjection(ctx context.Context, id uuid.UUID) (LockMonitorProjectionRow, error) {
@@ -148,6 +178,7 @@ func (q *Queries) LockMonitorProjection(ctx context.Context, id uuid.UUID) (Lock
 		&i.State,
 		&i.ConsecutiveFailures,
 		&i.ConsecutiveSuccesses,
+		&i.LastAppliedScheduledAt,
 	)
 	return i, err
 }
@@ -173,20 +204,22 @@ UPDATE monitor_states SET
     last_duration_ms = $7,
     consecutive_failures = $8,
     consecutive_successes = $9,
+    last_applied_scheduled_at = $10,
     updated_at = now()
 WHERE monitor_id = $1
 `
 
 type UpdateMonitorProjectionParams struct {
-	MonitorID            uuid.UUID          `json:"monitor_id"`
-	State                string             `json:"state"`
-	LastCheckResultID    pgtype.UUID        `json:"last_check_result_id"`
-	LastCheckedAt        pgtype.Timestamptz `json:"last_checked_at"`
-	LastOutcome          pgtype.Text        `json:"last_outcome"`
-	LastStatusCode       pgtype.Int2        `json:"last_status_code"`
-	LastDurationMs       pgtype.Int8        `json:"last_duration_ms"`
-	ConsecutiveFailures  int64              `json:"consecutive_failures"`
-	ConsecutiveSuccesses int64              `json:"consecutive_successes"`
+	MonitorID              uuid.UUID          `json:"monitor_id"`
+	State                  string             `json:"state"`
+	LastCheckResultID      pgtype.UUID        `json:"last_check_result_id"`
+	LastCheckedAt          pgtype.Timestamptz `json:"last_checked_at"`
+	LastOutcome            pgtype.Text        `json:"last_outcome"`
+	LastStatusCode         pgtype.Int2        `json:"last_status_code"`
+	LastDurationMs         pgtype.Int8        `json:"last_duration_ms"`
+	ConsecutiveFailures    int64              `json:"consecutive_failures"`
+	ConsecutiveSuccesses   int64              `json:"consecutive_successes"`
+	LastAppliedScheduledAt pgtype.Timestamptz `json:"last_applied_scheduled_at"`
 }
 
 func (q *Queries) UpdateMonitorProjection(ctx context.Context, arg UpdateMonitorProjectionParams) error {
@@ -200,6 +233,7 @@ func (q *Queries) UpdateMonitorProjection(ctx context.Context, arg UpdateMonitor
 		arg.LastDurationMs,
 		arg.ConsecutiveFailures,
 		arg.ConsecutiveSuccesses,
+		arg.LastAppliedScheduledAt,
 	)
 	return err
 }

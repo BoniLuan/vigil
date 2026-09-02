@@ -24,6 +24,7 @@ type CheckResult struct {
 	DialedIp         *netip.Addr        `json:"dialed_ip"`
 	TlsExpiresAt     pgtype.Timestamptz `json:"tls_expires_at"`
 	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	ExecutionID      pgtype.UUID        `json:"execution_id"`
 }
 
 type Monitor struct {
@@ -46,17 +47,32 @@ type Monitor struct {
 	CreatedAt         pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
 	ArchivedAt        pgtype.Timestamptz `json:"archived_at"`
+	NextCheckAt       pgtype.Timestamptz `json:"next_check_at"`
 }
 
 type MonitorState struct {
-	MonitorID            uuid.UUID          `json:"monitor_id"`
-	State                string             `json:"state"`
-	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
-	LastCheckResultID    pgtype.UUID        `json:"last_check_result_id"`
-	LastCheckedAt        pgtype.Timestamptz `json:"last_checked_at"`
-	LastOutcome          pgtype.Text        `json:"last_outcome"`
-	LastStatusCode       pgtype.Int2        `json:"last_status_code"`
-	LastDurationMs       pgtype.Int8        `json:"last_duration_ms"`
-	ConsecutiveFailures  int64              `json:"consecutive_failures"`
-	ConsecutiveSuccesses int64              `json:"consecutive_successes"`
+	MonitorID              uuid.UUID          `json:"monitor_id"`
+	State                  string             `json:"state"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	LastCheckResultID      pgtype.UUID        `json:"last_check_result_id"`
+	LastCheckedAt          pgtype.Timestamptz `json:"last_checked_at"`
+	LastOutcome            pgtype.Text        `json:"last_outcome"`
+	LastStatusCode         pgtype.Int2        `json:"last_status_code"`
+	LastDurationMs         pgtype.Int8        `json:"last_duration_ms"`
+	ConsecutiveFailures    int64              `json:"consecutive_failures"`
+	ConsecutiveSuccesses   int64              `json:"consecutive_successes"`
+	LastAppliedScheduledAt pgtype.Timestamptz `json:"last_applied_scheduled_at"`
+}
+
+type ScheduledExecution struct {
+	ID             uuid.UUID          `json:"id"`
+	MonitorID      uuid.UUID          `json:"monitor_id"`
+	ScheduledAt    pgtype.Timestamptz `json:"scheduled_at"`
+	Status         string             `json:"status"`
+	LeaseOwner     pgtype.UUID        `json:"lease_owner"`
+	LeaseExpiresAt pgtype.Timestamptz `json:"lease_expires_at"`
+	ClaimCount     int32              `json:"claim_count"`
+	FinishedAt     pgtype.Timestamptz `json:"finished_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }

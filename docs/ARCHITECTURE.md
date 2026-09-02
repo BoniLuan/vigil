@@ -244,9 +244,10 @@ monitor  *──* notification_channel
 The worker should use a database-backed scheduler, not one timer goroutine per
 monitor and not an external queue in v0.1.
 
-1. Poll for due, enabled monitors in small batches.
-2. Atomically claim rows using a short lease (`FOR UPDATE SKIP LOCKED`) and move
-   `next_check_at` forward based on the scheduled time, with bounded jitter.
+1. Materialize at most one overdue execution per due, enabled monitor in a
+   bounded batch, using `monitors.next_check_at` as the next intended boundary.
+2. Advance `next_check_at` directly to the first future interval boundary and
+   claim pending or lease-expired execution rows with `FOR UPDATE SKIP LOCKED`.
 3. Submit claims to a bounded worker pool. Global concurrency and optional
    per-host concurrency are configuration values.
 4. Execute each request with a context deadline, a dedicated HTTP client,
@@ -257,10 +258,18 @@ monitor and not an external queue in v0.1.
 6. Release/expire the lease. A crashed worker leaves a recoverable lease, not a
    permanently stuck monitor.
 
-Scheduling should use the intended schedule rather than `completion + interval`
-to reduce drift, while skipping excessive catch-up runs after downtime. A
-unique execution key such as `(monitor_id, scheduled_at)` makes claims and
-retries idempotent. Database time avoids clock disagreement between processes.
+Scheduling uses the intended schedule rather than `completion + interval`, so
+completion latency cannot cause drift. `scheduled_executions` is the durable
+work ledger; its unique `(monitor_id, scheduled_at)` identity survives claims,
+lease recovery, and completion retries. After downtime Vigil creates at most
+one overdue execution per monitor instead of replaying every missed interval.
+Database time governs due checks and finite lease expiry.
+
+Completion stores the result, advances the current-state projection when the
+execution is newer than `monitor_states.last_applied_scheduled_at`, and marks
+the execution completed in one transaction. Older executions that finish late
+remain in history but cannot roll counters or current state backward. See ADR
+0011 for the full state, pause/archive, and idempotency semantics.
 
 Checks should normally not be retried immediately: a timeout is useful evidence
 and the next scheduled check is the retry. Notification delivery, by contrast,

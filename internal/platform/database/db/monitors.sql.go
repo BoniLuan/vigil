@@ -17,6 +17,7 @@ UPDATE monitors SET
     enabled = false,
     public = false,
     archived_at = now(),
+    next_check_at = NULL,
     updated_at = now(),
     version = version + 1
 WHERE id = $1 AND archived_at IS NULL
@@ -34,12 +35,12 @@ const createMonitor = `-- name: CreateMonitor :one
 INSERT INTO monitors (
     id, name, slug, description, kind, url, http_method,
     expected_status_min, expected_status_max, interval_seconds, timeout_ms,
-    failure_threshold, recovery_threshold, enabled, public
+    failure_threshold, recovery_threshold, enabled, public, next_check_at
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7,
-    $8, $9, $10, $11, $12, $13, $14, $15
+    $8, $9, $10, $11, $12, $13, $14, $15, CASE WHEN $14 THEN transaction_timestamp() ELSE NULL END
 )
-RETURNING id, name, slug, description, kind, url, http_method, expected_status_min, expected_status_max, interval_seconds, timeout_ms, failure_threshold, recovery_threshold, enabled, public, version, created_at, updated_at, archived_at
+RETURNING id, name, slug, description, kind, url, http_method, expected_status_min, expected_status_max, interval_seconds, timeout_ms, failure_threshold, recovery_threshold, enabled, public, version, created_at, updated_at, archived_at, next_check_at
 `
 
 type CreateMonitorParams struct {
@@ -99,6 +100,7 @@ func (q *Queries) CreateMonitor(ctx context.Context, arg CreateMonitorParams) (M
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ArchivedAt,
+		&i.NextCheckAt,
 	)
 	return i, err
 }
@@ -106,7 +108,7 @@ func (q *Queries) CreateMonitor(ctx context.Context, arg CreateMonitorParams) (M
 const createMonitorState = `-- name: CreateMonitorState :one
 INSERT INTO monitor_states (monitor_id, state)
 VALUES ($1, $2)
-RETURNING monitor_id, state, updated_at, last_check_result_id, last_checked_at, last_outcome, last_status_code, last_duration_ms, consecutive_failures, consecutive_successes
+RETURNING monitor_id, state, updated_at, last_check_result_id, last_checked_at, last_outcome, last_status_code, last_duration_ms, consecutive_failures, consecutive_successes, last_applied_scheduled_at
 `
 
 type CreateMonitorStateParams struct {
@@ -128,6 +130,7 @@ func (q *Queries) CreateMonitorState(ctx context.Context, arg CreateMonitorState
 		&i.LastDurationMs,
 		&i.ConsecutiveFailures,
 		&i.ConsecutiveSuccesses,
+		&i.LastAppliedScheduledAt,
 	)
 	return i, err
 }
@@ -301,10 +304,11 @@ func (q *Queries) LockMonitor(ctx context.Context, id uuid.UUID) (LockMonitorRow
 const setMonitorEnabled = `-- name: SetMonitorEnabled :one
 UPDATE monitors SET
     enabled = $2,
+    next_check_at = CASE WHEN $2 THEN transaction_timestamp() ELSE NULL END,
     updated_at = now(),
     version = version + 1
 WHERE id = $1
-RETURNING id, name, slug, description, kind, url, http_method, expected_status_min, expected_status_max, interval_seconds, timeout_ms, failure_threshold, recovery_threshold, enabled, public, version, created_at, updated_at, archived_at
+RETURNING id, name, slug, description, kind, url, http_method, expected_status_min, expected_status_max, interval_seconds, timeout_ms, failure_threshold, recovery_threshold, enabled, public, version, created_at, updated_at, archived_at, next_check_at
 `
 
 type SetMonitorEnabledParams struct {
@@ -335,6 +339,7 @@ func (q *Queries) SetMonitorEnabled(ctx context.Context, arg SetMonitorEnabledPa
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ArchivedAt,
+		&i.NextCheckAt,
 	)
 	return i, err
 }
@@ -346,7 +351,7 @@ UPDATE monitor_states SET
     consecutive_successes = CASE WHEN $2::varchar = 'pending' THEN 0 ELSE consecutive_successes END,
     updated_at = now()
 WHERE monitor_id = $1
-RETURNING monitor_id, state, updated_at, last_check_result_id, last_checked_at, last_outcome, last_status_code, last_duration_ms, consecutive_failures, consecutive_successes
+RETURNING monitor_id, state, updated_at, last_check_result_id, last_checked_at, last_outcome, last_status_code, last_duration_ms, consecutive_failures, consecutive_successes, last_applied_scheduled_at
 `
 
 type SetMonitorStateParams struct {
@@ -368,6 +373,7 @@ func (q *Queries) SetMonitorState(ctx context.Context, arg SetMonitorStateParams
 		&i.LastDurationMs,
 		&i.ConsecutiveFailures,
 		&i.ConsecutiveSuccesses,
+		&i.LastAppliedScheduledAt,
 	)
 	return i, err
 }
@@ -389,7 +395,7 @@ UPDATE monitors SET
     updated_at = now(),
     version = version + 1
 WHERE id = $1 AND version = $14 AND archived_at IS NULL
-RETURNING id, name, slug, description, kind, url, http_method, expected_status_min, expected_status_max, interval_seconds, timeout_ms, failure_threshold, recovery_threshold, enabled, public, version, created_at, updated_at, archived_at
+RETURNING id, name, slug, description, kind, url, http_method, expected_status_min, expected_status_max, interval_seconds, timeout_ms, failure_threshold, recovery_threshold, enabled, public, version, created_at, updated_at, archived_at, next_check_at
 `
 
 type UpdateMonitorParams struct {
@@ -447,6 +453,7 @@ func (q *Queries) UpdateMonitor(ctx context.Context, arg UpdateMonitorParams) (M
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ArchivedAt,
+		&i.NextCheckAt,
 	)
 	return i, err
 }

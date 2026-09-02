@@ -125,6 +125,11 @@ func (s *Store) setOperationalState(ctx context.Context, id uuid.UUID, enabled b
 			return Monitor{}, fmt.Errorf("set monitor state: %w", err)
 		}
 	}
+	if !enabled {
+		if err := q.SkipPendingExecutions(ctx, id); err != nil {
+			return Monitor{}, fmt.Errorf("skip pending monitor executions: %w", err)
+		}
+	}
 	row, err := q.GetMonitor(ctx, id)
 	if err != nil {
 		return Monitor{}, fmt.Errorf("read changed monitor state: %w", err)
@@ -154,6 +159,9 @@ func (s *Store) Archive(ctx context.Context, id uuid.UUID) error {
 	}
 	if _, err := q.SetMonitorState(ctx, generated.SetMonitorStateParams{MonitorID: id, State: StatePaused}); err != nil {
 		return fmt.Errorf("pause archived monitor: %w", err)
+	}
+	if err := q.SkipPendingExecutions(ctx, id); err != nil {
+		return fmt.Errorf("skip pending archived executions: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit archive monitor: %w", err)

@@ -29,8 +29,9 @@ func (h *Handler) Register(mux *http.ServeMux) {
 }
 
 type resultResponse struct {
-	ID               uuid.UUID        `json:"id"`
-	MonitorID        uuid.UUID        `json:"monitor_id"`
+	ID               uuid.UUID `json:"id"`
+	MonitorID        uuid.UUID
+	ExecutionID      *uuid.UUID       `json:"monitor_id"`
 	StartedAt        time.Time        `json:"started_at"`
 	FinishedAt       time.Time        `json:"finished_at"`
 	DurationMS       int64            `json:"duration_ms"`
@@ -85,7 +86,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 
 func response(result checkresult.StoredResult) resultResponse {
 	response := resultResponse{
-		ID: result.ID, MonitorID: result.MonitorID, StartedAt: result.StartedAt,
+		ID: result.ID, MonitorID: result.MonitorID, ExecutionID: result.ExecutionID, StartedAt: result.StartedAt,
 		FinishedAt: result.FinishedAt, DurationMS: result.Duration.Milliseconds(),
 		Outcome: result.Outcome, StatusCode: result.StatusCode,
 		TLSExpiresAt: result.TLSExpiresAt, CreatedAt: result.CreatedAt,

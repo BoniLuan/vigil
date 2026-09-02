@@ -60,9 +60,7 @@ option can inject `Vigil/<version>` when checker composition is implemented.
 `internal/checkresult.Service.ApplyResult` is the boundary from the pure checker
 to PostgreSQL. Network execution finishes before a short transaction locks the
 monitor and its projection, inserts one `check_results` row, updates
-`monitor_states`, and commits. The scheduler milestone will add a durable
-execution identity; this milestone deliberately does not invent one before
-claim semantics exist.
+`monitor_states`, and commits. Scheduled executions now provide durable identity and idempotent completion; manual results retain a nullable execution relationship.
 
 Projection transitions are deterministic:
 
@@ -80,7 +78,4 @@ Success clears consecutive failures; failure clears consecutive successes. A
 late result for a paused or archived monitor is retained and becomes its latest
 historical result, but cannot revive it or advance threshold counters.
 
-History reads use bounded limit/offset pagination in v0.1. Cursor pagination can
-replace it when result volume demonstrates a need. `check_results` has no
-speculative execution key: the scheduler/lease migration must introduce and
-uniquely constrain the execution identity together with its retry semantics.
+History reads use bounded limit/offset pagination in v0.1. Cursor pagination can replace it when result volume demonstrates a need. Scheduled completion uses the unique nullable `check_results.execution_id`; retries return the already stored row and cannot apply projection counters twice.

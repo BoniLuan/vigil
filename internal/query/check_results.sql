@@ -1,7 +1,7 @@
 -- name: LockMonitorProjection :one
 SELECT
     m.id, m.failure_threshold, m.recovery_threshold, m.archived_at,
-    s.state, s.consecutive_failures, s.consecutive_successes
+    s.state, s.consecutive_failures, s.consecutive_successes, s.last_applied_scheduled_at
 FROM monitors m
 JOIN monitor_states s ON s.monitor_id = m.id
 WHERE m.id = $1
@@ -9,11 +9,11 @@ FOR UPDATE OF m, s;
 
 -- name: InsertCheckResult :one
 INSERT INTO check_results (
-    id, monitor_id, started_at, finished_at, duration_ms, outcome,
+    id, monitor_id, execution_id, started_at, finished_at, duration_ms, outcome,
     status_code, error_code, error_description, dialed_ip, tls_expires_at
 ) VALUES (
-    $1, $2, $3, $4, $5, $6,
-    $7, $8, $9, $10, $11
+    $1, $2, $3, $4, $5, $6, $7,
+    $8, $9, $10, $11, $12
 )
 RETURNING *;
 
@@ -27,6 +27,7 @@ UPDATE monitor_states SET
     last_duration_ms = $7,
     consecutive_failures = $8,
     consecutive_successes = $9,
+    last_applied_scheduled_at = $10,
     updated_at = now()
 WHERE monitor_id = $1;
 
@@ -39,3 +40,6 @@ LIMIT $2 OFFSET $3;
 
 -- name: MonitorExists :one
 SELECT EXISTS(SELECT 1 FROM monitors WHERE id = $1);
+
+-- name: GetCheckResultByExecution :one
+SELECT * FROM check_results WHERE execution_id = $1;

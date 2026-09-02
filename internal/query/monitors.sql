@@ -2,10 +2,10 @@
 INSERT INTO monitors (
     id, name, slug, description, kind, url, http_method,
     expected_status_min, expected_status_max, interval_seconds, timeout_ms,
-    failure_threshold, recovery_threshold, enabled, public
+    failure_threshold, recovery_threshold, enabled, public, next_check_at
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7,
-    $8, $9, $10, $11, $12, $13, $14, $15
+    $8, $9, $10, $11, $12, $13, $14, $15, CASE WHEN $14 THEN transaction_timestamp() ELSE NULL END
 )
 RETURNING *;
 
@@ -60,6 +60,7 @@ RETURNING *;
 -- name: SetMonitorEnabled :one
 UPDATE monitors SET
     enabled = $2,
+    next_check_at = CASE WHEN $2 THEN transaction_timestamp() ELSE NULL END,
     updated_at = now(),
     version = version + 1
 WHERE id = $1
@@ -82,6 +83,7 @@ UPDATE monitors SET
     enabled = false,
     public = false,
     archived_at = now(),
+    next_check_at = NULL,
     updated_at = now(),
     version = version + 1
 WHERE id = $1 AND archived_at IS NULL

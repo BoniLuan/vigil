@@ -56,7 +56,7 @@ make lint
 make build
 ```
 
-Vigil now implements HTTP monitor configuration, the security-hardened HTTP checker, durable check history, threshold-based current-state projection, and administration endpoints under `/api/v1/monitors`. Scheduling, incidents, and notifications remain intentionally unimplemented. See [`api/openapi.yaml`](api/openapi.yaml) for the
+Vigil now implements HTTP monitor configuration, the security-hardened HTTP checker, durable check history, threshold-based current-state projection, and administration endpoints under `/api/v1/monitors`. Durable scheduler claims and leases are implemented as callable primitives; checker composition, the worker pool, incidents, and notifications remain intentionally unimplemented. See [`api/openapi.yaml`](api/openapi.yaml) for the
 current API contract.
 
 PostgreSQL integration tests require an isolated database whose name ends in

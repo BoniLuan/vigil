@@ -255,10 +255,11 @@ components:
             state_updated_at: { type: string, format: date-time, readOnly: true }
     CheckResult:
       type: object
-      required: [id, monitor_id, started_at, finished_at, duration_ms, outcome, status_code, error_code, error_description, dialed_ip, tls_expires_at, created_at]
+      required: [id, monitor_id, execution_id, started_at, finished_at, duration_ms, outcome, status_code, error_code, error_description, dialed_ip, tls_expires_at, created_at]
       properties:
         id: { type: string, format: uuid }
         monitor_id: { type: string, format: uuid }
+        execution_id: { type: ['string', 'null'], format: uuid }
         started_at: { type: string, format: date-time }
         finished_at: { type: string, format: date-time }
         duration_ms: { type: integer, format: int64, minimum: 0 }
