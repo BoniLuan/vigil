@@ -1,0 +1,9 @@
+.git
+.env
+.env.*
+!.env.example
+bin/
+coverage.out
+.vscode/
+.idea/
+deploy/**/.env

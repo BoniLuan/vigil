@@ -6,6 +6,7 @@
 .env
 .env.*
 !.env.example
+deploy/**/.env
 .idea/
 .vscode/
 *.log
