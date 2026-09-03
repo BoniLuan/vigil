@@ -38,6 +38,8 @@ Set `VIGIL_IMAGE` to an immutable release tag or digest such as `ghcr.io/bonilua
 docker build --build-arg VERSION=v0.1.0 --build-arg COMMIT="$(git rev-parse --short HEAD)" --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" -t ghcr.io/boniluan/vigil:v0.1.0 .
 ```
 
+For the initial VPS rollout, tag the local image with the short Git commit (for example `vigil:dda9d32`) and set `VIGIL_IMAGE` to that exact tag in `/home/luan/.config/vigil/vigil.env`.
+
 One non-root image runs `api`, `worker`, `migrate`, and `version`. It contains embedded assets and migrations plus the CA trust store, but no compiler or source tree.
 
 ## Database and first deployment
@@ -66,6 +68,10 @@ Node Exporter receives read-only views of host `/proc`, `/sys`, and `/`. cAdviso
 
 `deploy/nginx/edge.override.yaml` extends the existing edge Compose project without modifying it. It mounts `deploy/nginx/vigil.conf` read-only at `/etc/nginx/conf.d/vigil.conf` and `/home/luan/.config/vigil/htpasswd` at `/etc/nginx/.htpasswd-vigil`. Obtain or expand the shared `boniluan.com` certificate through its Certbot container, then validate and reload the edge proxy:
 The certificate must include `boniluan.com`, `www.boniluan.com`, `finpulse.boniluan.com`, `sitio.boniluan.com`, `vigil.boniluan.com`, and `grafana.boniluan.com`; the existing Certbot renewal container then renews that lineage automatically.
+
+```bash
+docker exec boniluan-certbot certbot certonly --webroot --webroot-path /var/www/certbot --cert-name boniluan.com --expand --non-interactive --agree-tos -d boniluan.com -d www.boniluan.com -d finpulse.boniluan.com -d sitio.boniluan.com -d vigil.boniluan.com -d grafana.boniluan.com
+```
 
 ```bash
 ADMIN_PASSWORD="$(openssl rand -hex 24)"
