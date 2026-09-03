@@ -62,6 +62,8 @@ services:
       app: {}
       monitoring:
         aliases: [vigil-api]
+      edge:
+        aliases: [vigil-api]
     healthcheck:
       test: [CMD, curl, --fail, --silent, http://127.0.0.1:8080/readyz]
       interval: 15s
@@ -104,6 +106,7 @@ services:
 
 volumes:
   vigil_postgres_data:
+    name: vigil-postgres-data
 
 networks:
   app:
@@ -111,3 +114,6 @@ networks:
   monitoring:
     external: true
     name: vigil-monitoring
+  edge:
+    external: true
+    name: web-proxy

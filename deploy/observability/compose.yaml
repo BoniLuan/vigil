@@ -39,7 +39,10 @@ services:
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
       - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
-    networks: [monitoring]
+    networks:
+      monitoring: {}
+      edge:
+        aliases: [grafana]
     depends_on: [prometheus]
     restart: unless-stopped
     cap_drop: [ALL]
@@ -101,9 +104,14 @@ services:
 
 volumes:
   prometheus_data:
+    name: vigil-prometheus-data
   grafana_data:
+    name: vigil-grafana-data
 
 networks:
   monitoring:
     external: true
     name: vigil-monitoring
+  edge:
+    external: true
+    name: web-proxy
