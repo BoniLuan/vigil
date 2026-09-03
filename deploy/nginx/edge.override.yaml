@@ -1,0 +1,5 @@
+services:
+  web:
+    volumes:
+      - ../vigil/deploy/nginx/vigil.conf:/etc/nginx/conf.d/vigil.conf:ro
+      - ${VIGIL_CONFIG_DIR:-/home/luan/.config/vigil}/htpasswd:/etc/nginx/.htpasswd-vigil:ro

@@ -64,13 +64,20 @@ Node Exporter receives read-only views of host `/proc`, `/sys`, and `/`. cAdviso
 
 ## Nginx, HTTPS, and Basic Auth
 
-The existing edge Compose project mounts `deploy/nginx/vigil.conf` read-only at `/etc/nginx/conf.d/vigil.conf` and mounts `/home/luan/.config/vigil/htpasswd` at `/etc/nginx/.htpasswd-vigil`. Obtain or expand the shared `boniluan.com` certificate through its Certbot container, then validate and reload the edge proxy:
+`deploy/nginx/edge.override.yaml` extends the existing edge Compose project without modifying it. It mounts `deploy/nginx/vigil.conf` read-only at `/etc/nginx/conf.d/vigil.conf` and `/home/luan/.config/vigil/htpasswd` at `/etc/nginx/.htpasswd-vigil`. Obtain or expand the shared `boniluan.com` certificate through its Certbot container, then validate and reload the edge proxy:
+The certificate must include `boniluan.com`, `www.boniluan.com`, `finpulse.boniluan.com`, `sitio.boniluan.com`, `vigil.boniluan.com`, and `grafana.boniluan.com`; the existing Certbot renewal container then renews that lineage automatically.
 
 ```bash
+ADMIN_PASSWORD="$(openssl rand -hex 24)"
+printf "%s\n" "$ADMIN_PASSWORD" > /home/luan/.config/vigil/admin.password
+chmod 600 /home/luan/.config/vigil/admin.password
+docker run --rm httpd:2.4-alpine htpasswd -Bbn vigil-admin "$ADMIN_PASSWORD" > /home/luan/.config/vigil/htpasswd
+unset ADMIN_PASSWORD
+docker run --rm -v /home/luan/.config/vigil:/data alpine:3.22 chown 0:101 /data/htpasswd
+chmod 640 /home/luan/.config/vigil/htpasswd
+docker compose -f /home/luan/projects/boniluan/compose.yaml -f /home/luan/projects/vigil/deploy/nginx/edge.override.yaml up -d --build web
 docker exec boniluan-home nginx -t
 docker exec boniluan-home nginx -s reload
-htpasswd -c /home/luan/.config/vigil/htpasswd vigil-admin
-chmod 640 /home/luan/.config/vigil/htpasswd
 ```
 
 Ensure the Nginx worker can read that file. Vigil uses Basic Auth at Nginx. Grafana uses its own authentication; anonymous access and signup are disabled. No reference route proxies metrics, exporters, Prometheus, or the worker listener.
@@ -87,7 +94,18 @@ curl --fail http://127.0.0.1:8080/readyz
 docker compose --env-file /home/luan/.config/vigil/vigil.env -f deploy/vigil/compose.yaml up -d --no-deps vigil-worker
 ```
 
-Rollback by restoring the previous immutable `VIGIL_IMAGE`. Migrations are forward-only: for an incompatible schema rollback, restore the pre-upgrade database backup before starting the old binary. Schedule encrypted off-VPS `pg_dump --format=custom` backups and test restoration. Grafana dashboards and datasource provisioning are reproducible from Git.
+Rollback by restoring the previous immutable `VIGIL_IMAGE`. Migrations are forward-only: for an incompatible schema rollback, restore the pre-upgrade database backup before starting the old binary. Grafana dashboards and datasource provisioning are reproducible from Git.
+
+Create and validate a restrictive custom-format backup without modifying production:
+
+```bash
+mkdir -p /home/luan/.config/vigil/backups
+umask 077
+docker exec vigil-postgres-1 pg_dump --format=custom --no-owner --no-acl -U vigil -d vigil > /home/luan/.config/vigil/backups/vigil-$(date -u +%Y%m%dT%H%MZ).dump
+docker exec -i vigil-postgres-1 pg_restore --list < /path/to/the/new.dump
+```
+
+Copy backups encrypted off the VPS and periodically test restoration against a separate temporary database.
 
 ## Operations and troubleshooting
 
@@ -99,6 +117,12 @@ docker compose --env-file /home/luan/.config/vigil/vigil.env -f deploy/vigil/com
 docker compose --env-file /home/luan/.config/vigil/observability.env -f deploy/observability/compose.yaml ps
 docker compose --env-file /home/luan/.config/vigil/observability.env -f deploy/observability/compose.yaml logs --tail=200 prometheus grafana node-exporter cadvisor
 docker stats --no-stream
+
+# Stop without deleting named data volumes:
+docker compose --env-file /home/luan/.config/vigil/vigil.env -f deploy/vigil/compose.yaml stop
+docker compose --env-file /home/luan/.config/vigil/observability.env -f deploy/observability/compose.yaml stop
 ```
+
+The administration UI is `https://vigil.boniluan.com` and Grafana is `https://grafana.boniluan.com`.
 
 For a down scrape target, verify both projects join `vigil-monitoring`. cAdvisor failures commonly mean `/dev/kmsg`, cgroups, or the Docker data root differs on that host. The API and worker use read-only root filesystems, dropped capabilities, and no-new-privileges. Only the checker needs outbound access; controlled explicit-IP dialing and SSRF policy remain unchanged.
