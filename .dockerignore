@@ -7,3 +7,9 @@ coverage.out
 .vscode/
 .idea/
 deploy/**/.env
+.htpasswd*
+deploy/**/.htpasswd*
+backups/
+*.dump
+postgres-data/
+deploy/**/data/

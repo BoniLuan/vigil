@@ -7,6 +7,12 @@
 .env.*
 !.env.example
 deploy/**/.env
+.htpasswd*
+deploy/**/.htpasswd*
+/backups/
+*.dump
+postgres-data/
+deploy/**/data/
 .idea/
 .vscode/
 *.log
