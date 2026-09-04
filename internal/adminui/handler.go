@@ -19,7 +19,7 @@ import (
 	"github.com/google/uuid"
 )
 
-//go:embed templates/*.html assets/*.css
+//go:embed templates/*.html assets/*.css assets/*.svg
 var files embed.FS
 
 type Handler struct {

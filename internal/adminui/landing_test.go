@@ -9,6 +9,14 @@ import (
 	"testing"
 )
 
+func requestAsset(t *testing.T, mux *http.ServeMux, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	request := httptest.NewRequest(http.MethodGet, path, nil)
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, request)
+	return response
+}
+
 func TestLandingPageAndAssets(t *testing.T) {
 	handler, err := New(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
@@ -28,6 +36,7 @@ func TestLandingPageAndAssets(t *testing.T) {
 		"Illustrative preview",
 		"https://github.com/BoniLuan/vigil",
 		"Operator login",
+		"/assets/favicon.svg",
 	} {
 		if !strings.Contains(response.Body.String(), expected) {
 			t.Errorf("landing response does not contain %q", expected)
@@ -39,6 +48,9 @@ func TestLandingPageAndAssets(t *testing.T) {
 	mux.ServeHTTP(assetResponse, assetRequest)
 	if assetResponse.Code != http.StatusOK {
 		t.Fatalf("asset status = %d", assetResponse.Code)
+	}
+	if favicon := requestAsset(t, mux, "/assets/favicon.svg"); favicon.Code != http.StatusOK {
+		t.Fatalf("favicon status = %d", favicon.Code)
 	}
 	if contentType := assetResponse.Header().Get("Content-Type"); !strings.Contains(contentType, "text/css") {
 		t.Errorf("asset Content-Type = %q", contentType)
