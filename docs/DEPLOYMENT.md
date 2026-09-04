@@ -86,7 +86,7 @@ docker exec boniluan-home nginx -t
 docker exec boniluan-home nginx -s reload
 ```
 
-Ensure the Nginx worker can read that file. Vigil uses Basic Auth at Nginx. Grafana uses its own authentication; anonymous access and signup are disabled. No reference route proxies metrics, exporters, Prometheus, or the worker listener.
+Ensure the Nginx worker can read that file. Vigil’s `/` portfolio landing page and `/assets/` are public; `/monitors`, `/api/v1`, and every other Vigil route inherit Basic Auth from the protected catch-all location. The landing-page dashboard is illustrative and does not query or expose production monitor data. Grafana uses its own authentication; anonymous access and signup are disabled. No reference route proxies metrics, exporters, Prometheus, or the worker listener.
 
 ## Upgrade, rollback, and backup
 

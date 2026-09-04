@@ -44,7 +44,8 @@ go run ./cmd/vigil worker
 With the API running:
 
 ```text
-Admin UI:  http://localhost:8080/monitors
+Public project page: http://localhost:8080/
+Admin UI:           http://localhost:8080/monitors
 Metrics:   http://localhost:8080/metrics
 Liveness:  http://localhost:8080/livez
 Readiness: http://localhost:8080/readyz

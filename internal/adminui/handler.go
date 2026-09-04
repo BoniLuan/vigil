@@ -54,7 +54,7 @@ func New(monitors *monitor.Service, results *checkresult.Service, logger *slog.L
 		"hostname": hostname, "safeurl": safeURL, "errorcode": errorCode,
 	}
 	templates := make(map[string]*template.Template)
-	for _, name := range []string{"list", "detail", "form"} {
+	for _, name := range []string{"landing", "list", "detail", "form"} {
 		parsed, err := template.New(name).Funcs(functions).ParseFS(files, "templates/"+name+".html")
 		if err != nil {
 			return nil, fmt.Errorf("parse %s template: %w", name, err)
@@ -67,7 +67,7 @@ func New(monitors *monitor.Service, results *checkresult.Service, logger *slog.L
 func (h *Handler) Register(mux *http.ServeMux) {
 	assets, _ := fs.Sub(files, "assets")
 	mux.Handle("GET /assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(assets))))
-	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, "/monitors", http.StatusSeeOther) })
+	mux.HandleFunc("GET /{$}", h.landing)
 	mux.HandleFunc("GET /monitors", h.list)
 	mux.HandleFunc("GET /monitors/new", h.newForm)
 	mux.HandleFunc("POST /monitors", h.create)
@@ -77,6 +77,10 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /monitors/{id}/pause", h.pause)
 	mux.HandleFunc("POST /monitors/{id}/resume", h.resume)
 	mux.HandleFunc("POST /monitors/{id}/archive", h.archive)
+}
+
+func (h *Handler) landing(w http.ResponseWriter, _ *http.Request) {
+	h.render(w, "landing", page{Title: "Vigil — Monitoring with operational clarity"})
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
