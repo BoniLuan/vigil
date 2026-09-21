@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.11-alpine
+        env:
+          POSTGRES_USER: vigil
+          POSTGRES_PASSWORD: vigil_test_only
+          POSTGRES_DB: vigil_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vigil -d vigil_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      VIGIL_TEST_DATABASE_URL: postgres://vigil:vigil_test_only@localhost:5432/vigil_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Formatting
+        run: test -z "$(gofmt -l $(git ls-files '*.go'))"
+      - name: Dependencies are tidy
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+      - name: Unit and PostgreSQL integration tests
+        run: go test -count=1 ./...
+      - name: Race detector
+        run: go test -race -count=1 ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Build production binary
+        run: go build -buildvcs=false -trimpath -o /tmp/vigil ./cmd/vigil
+      - name: Check generated SQL code
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src sqlc/sqlc:1.31.1 generate
+          git diff --exit-code -- internal/platform/database/db
+
+  deployment-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate development Compose
+        run: docker compose config --quiet
+      - name: Validate production Compose
+        run: docker compose --env-file deploy/vigil/.env.example -f deploy/vigil/compose.yaml config --quiet
+      - name: Validate observability Compose
+        run: docker compose --env-file deploy/observability/.env.example -f deploy/observability/compose.yaml config --quiet
+      - name: Validate Prometheus configuration
+        run: docker run --rm -v "$PWD/deploy/observability/prometheus:/etc/prometheus:ro" --entrypoint promtool prom/prometheus:v3.14.0 check config /etc/prometheus/prometheus.yml
+      - name: Validate provisioned dashboard JSON
+        run: jq -e . deploy/observability/grafana/dashboards/*.json >/dev/null

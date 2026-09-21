@@ -111,7 +111,17 @@ docker exec vigil-postgres-1 pg_dump --format=custom --no-owner --no-acl -U vigi
 docker exec -i vigil-postgres-1 pg_restore --list < /path/to/the/new.dump
 ```
 
-Copy backups encrypted off the VPS and periodically test restoration against a separate temporary database.
+Copy backups encrypted off the VPS. A backup is not verified by archive listing alone: periodically restore it into a disposable PostgreSQL container, compare the migration version and table counts to the backup-time snapshot, then stop the container. Never restore a test archive over production. The temporary restore container can use `--network none`, ephemeral data, and a read-only backup mount. Counts against live production may increase while the worker continues checking endpoints.
+
+## Retention status
+
+Prometheus is configured with 30-day retention. The `check_results` 90-day policy is documented in ADR 0006 and indexed by `started_at`, but automatic PostgreSQL pruning is not implemented yet. Zero over-age rows do not prove an enforced policy. Check the backlog without changing data:
+
+```bash
+docker exec vigil-postgres-1 psql -U vigil -d vigil -Atc "SELECT count(*) FROM check_results WHERE started_at < now() - interval '90 days';"
+```
+
+Before data reaches 90 days, implement and test bounded cleanup of results and their completed execution ledger. Preserve monitor configuration and indefinite incident history; do not use an ad-hoc bulk delete in production.
 
 ## Operations and troubleshooting
 
@@ -129,6 +139,8 @@ docker compose --env-file /home/luan/.config/vigil/vigil.env -f deploy/vigil/com
 docker compose --env-file /home/luan/.config/vigil/observability.env -f deploy/observability/compose.yaml stop
 ```
 
-The administration UI is `https://vigil.boniluan.com` and Grafana is `https://grafana.boniluan.com`.
+The public project page is `https://vigil.boniluan.com/`. The private service-monitoring dashboard is `https://vigil.boniluan.com/monitors`; browser Basic Auth username is `vigil-admin`, and its password is stored at `/home/luan/.config/vigil/admin.password` (mode 0600). The related Nginx password hash is `/home/luan/.config/vigil/htpasswd`; it is not the plaintext password.
+
+Infrastructure and application metrics dashboards are at `https://grafana.boniluan.com/`. Grafana has a separate login: username is configured as `GRAFANA_ADMIN_USER` (currently `admin`) and the password is stored at `/home/luan/.config/vigil/grafana.password` (mode 0600). Its environment file is `/home/luan/.config/vigil/observability.env`. Do not paste these credentials into tickets, chats, or the repository. The public project page and Grafana login are different from the private Vigil monitor administration view.
 
 For a down scrape target, verify both projects join `vigil-monitoring`. cAdvisor failures commonly mean `/dev/kmsg`, cgroups, or the Docker data root differs on that host. The API and worker use read-only root filesystems, dropped capabilities, and no-new-privileges. Only the checker needs outbound access; controlled explicit-IP dialing and SSRF policy remain unchanged.

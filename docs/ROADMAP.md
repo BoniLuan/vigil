@@ -1,7 +1,7 @@
 # Vigil Roadmap
 
-Status: accepted baseline
-Last updated: 2026-09-01
+Status: v0.1 deployed; CI and restore verification added 2026-09-21
+Last updated: 2026-09-21
 
 This roadmap uses small, demonstrable releases. Each release should leave the
 repository deployable, documented, and testable rather than accumulating an
@@ -32,6 +32,8 @@ Goal: monitor HTTP endpoints durably and observe both Vigil and its host.
 Exit criteria: after process or VPS restart, due checks resume without duplicate
 state transitions; an operator can create a monitor and inspect current/recent
 status; Grafana shows host, container, and Vigil health; CI is green.
+
+Operational follow-up: Prometheus 30-day retention is configured and a real PostgreSQL backup has been restored in isolation. The 90-day `check_results` policy is not automatically enforced yet; bounded cleanup must be completed before the first data reaches that age. Do not treat this as a completed retention feature.
 
 ## v0.2 — Incidents and notifications
 
