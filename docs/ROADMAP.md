@@ -33,7 +33,7 @@ Exit criteria: after process or VPS restart, due checks resume without duplicate
 state transitions; an operator can create a monitor and inspect current/recent
 status; Grafana shows host, container, and Vigil health; CI is green.
 
-Operational follow-up: Prometheus 30-day retention is configured and a real PostgreSQL backup has been restored in isolation. The 90-day `check_results` policy is not automatically enforced yet; bounded cleanup must be completed before the first data reaches that age. Do not treat this as a completed retention feature.
+Operational follow-up: Prometheus 30-day retention is configured, a real PostgreSQL backup has been restored in isolation, and the worker now enforces 90-day check-result retention with bounded cleanup.
 
 ## v0.2 — Incidents and notifications
 
@@ -45,8 +45,7 @@ Goal: turn check results into actionable, reliable service events.
 - Add transactional notification outbox and Discord webhook delivery with
   idempotency, retry/backoff, redaction, and delivery visibility.
 - Add TLS certificate expiry collection and warning policy.
-- Publish a clean, read-only status page on `status.boniluan.com` with sanitized
-  current state and recent incidents.
+- Extend the existing read-only public status page with sanitized incident history.
 - Add alerting/runbooks for stalled scheduler and notification backlog.
 
 Exit criteria: a controlled failure opens exactly one incident and sends one
@@ -61,8 +60,7 @@ Goal: make routine internet-facing operation safe and maintainable.
   password reset/recovery runbook, and audit events for configuration changes.
 - Add notification-channel management and secret encryption/rotation.
 - Add maintenance windows and explicit paused-incident behavior.
-- Implement check-result retention/batched cleanup and measure whether table
-  partitioning is warranted.
+- Measure retention cleanup and determine whether table partitioning is warranted.
 - Harden Compose containers, proxy policies, backup verification, dependency
   updates, image SBOM/signing, and protected deployment workflow.
 - Improve accessibility and responsive behavior of the server-rendered UI.

@@ -15,6 +15,7 @@ import (
 	"github.com/BoniLuan/vigil/internal/monitor"
 	"github.com/BoniLuan/vigil/internal/platform/config"
 	"github.com/BoniLuan/vigil/internal/platform/database"
+	"github.com/BoniLuan/vigil/internal/retention"
 	"github.com/BoniLuan/vigil/internal/scheduler"
 	"github.com/BoniLuan/vigil/internal/worker"
 )
@@ -60,7 +61,17 @@ func Worker(ctx context.Context, cfg config.Config, build BuildInfo, logger *slo
 	})
 	server := &http.Server{Addr: cfg.WorkerHTTPAddr, Handler: mux, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second}
 	runtimeCtx, cancelRuntime := context.WithCancel(ctx)
-	defer cancelRuntime()
+	retentionService, err := retention.New(pool, cfg.CheckResultRetentionDays)
+	if err != nil {
+		cancelRuntime()
+		return fmt.Errorf("configure retention: %w", err)
+	}
+	maintenanceDone := make(chan struct{})
+	go func() {
+		defer close(maintenanceDone)
+		retentionService.Run(runtimeCtx, logger)
+	}()
+	defer func() { cancelRuntime(); <-maintenanceDone }()
 	runnerDone := make(chan error, 1)
 	go func() { runnerDone <- runner.Run(runtimeCtx) }()
 	serverDone := make(chan error, 1)

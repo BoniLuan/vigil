@@ -16,7 +16,7 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.HTTPAddr != ":8080" || cfg.ShutdownTimeout != 35*time.Second {
 		t.Fatalf("unexpected defaults: %+v", cfg)
 	}
-	if cfg.WorkerConcurrency != 5 || cfg.WorkerPollInterval != time.Second || cfg.WorkerLeaseDuration != 45*time.Second || cfg.WorkerHTTPAddr != ":9090" {
+	if cfg.WorkerConcurrency != 5 || cfg.WorkerPollInterval != time.Second || cfg.WorkerLeaseDuration != 45*time.Second || cfg.WorkerHTTPAddr != ":9090" || cfg.CheckResultRetentionDays != 90 {
 		t.Fatalf("unexpected worker defaults: %+v", cfg)
 	}
 	if cfg.DatabaseMaxConns != 10 || cfg.DatabaseMinConns != 1 {
@@ -56,12 +56,13 @@ func TestLoadRejectsInvalidWorkerConfiguration(t *testing.T) {
 	t.Setenv("VIGIL_WORKER_CONCURRENCY", "101")
 	t.Setenv("VIGIL_WORKER_POLL_INTERVAL", "0s")
 	t.Setenv("VIGIL_WORKER_LEASE_DURATION", "34s")
+	t.Setenv("VIGIL_CHECK_RESULT_RETENTION_DAYS", "0")
 
 	_, err := Load()
 	if err == nil {
 		t.Fatal("Load() error = nil")
 	}
-	for _, want := range []string{"VIGIL_WORKER_CONCURRENCY", "VIGIL_WORKER_POLL_INTERVAL", "VIGIL_WORKER_LEASE_DURATION"} {
+	for _, want := range []string{"VIGIL_WORKER_CONCURRENCY", "VIGIL_WORKER_POLL_INTERVAL", "VIGIL_WORKER_LEASE_DURATION", "VIGIL_CHECK_RESULT_RETENTION_DAYS"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("Load() error %q does not contain %q", err, want)
 		}

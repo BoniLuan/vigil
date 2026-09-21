@@ -11,32 +11,34 @@ import (
 )
 
 type Config struct {
-	Environment         string
-	LogLevel            string
-	LogFormat           string
-	HTTPAddr            string
-	ShutdownTimeout     time.Duration
-	DatabaseURL         string
-	DatabaseMaxConns    int32
-	DatabaseMinConns    int32
-	DatabaseTimeout     time.Duration
-	WorkerConcurrency   int
-	WorkerPollInterval  time.Duration
-	WorkerLeaseDuration time.Duration
-	WorkerHTTPAddr      string
+	Environment              string
+	LogLevel                 string
+	LogFormat                string
+	HTTPAddr                 string
+	ShutdownTimeout          time.Duration
+	DatabaseURL              string
+	DatabaseMaxConns         int32
+	DatabaseMinConns         int32
+	DatabaseTimeout          time.Duration
+	WorkerConcurrency        int
+	WorkerPollInterval       time.Duration
+	WorkerLeaseDuration      time.Duration
+	WorkerHTTPAddr           string
+	CheckResultRetentionDays int32
 }
 
 func Load() (Config, error) {
 	cfg := Config{
-		Environment:       env("VIGIL_ENV", "development"),
-		LogLevel:          env("VIGIL_LOG_LEVEL", "info"),
-		LogFormat:         env("VIGIL_LOG_FORMAT", "json"),
-		HTTPAddr:          env("VIGIL_HTTP_ADDR", ":8080"),
-		DatabaseURL:       strings.TrimSpace(os.Getenv("VIGIL_DATABASE_URL")),
-		DatabaseMaxConns:  10,
-		DatabaseMinConns:  1,
-		WorkerConcurrency: 5,
-		WorkerHTTPAddr:    env("VIGIL_WORKER_HTTP_ADDR", ":9090"),
+		Environment:              env("VIGIL_ENV", "development"),
+		LogLevel:                 env("VIGIL_LOG_LEVEL", "info"),
+		LogFormat:                env("VIGIL_LOG_FORMAT", "json"),
+		HTTPAddr:                 env("VIGIL_HTTP_ADDR", ":8080"),
+		DatabaseURL:              strings.TrimSpace(os.Getenv("VIGIL_DATABASE_URL")),
+		DatabaseMaxConns:         10,
+		DatabaseMinConns:         1,
+		WorkerConcurrency:        5,
+		CheckResultRetentionDays: 90,
+		WorkerHTTPAddr:           env("VIGIL_WORKER_HTTP_ADDR", ":9090"),
 	}
 
 	var errs []error
@@ -46,6 +48,7 @@ func Load() (Config, error) {
 	cfg.WorkerLeaseDuration, errs = duration("VIGIL_WORKER_LEASE_DURATION", 45*time.Second, errs)
 	cfg.DatabaseMaxConns, errs = integer("VIGIL_DATABASE_MAX_CONNS", cfg.DatabaseMaxConns, errs)
 	cfg.DatabaseMinConns, errs = integer("VIGIL_DATABASE_MIN_CONNS", cfg.DatabaseMinConns, errs)
+	cfg.CheckResultRetentionDays, errs = integer("VIGIL_CHECK_RESULT_RETENTION_DAYS", cfg.CheckResultRetentionDays, errs)
 	workerConcurrency, nextErrs := integer("VIGIL_WORKER_CONCURRENCY", int32(cfg.WorkerConcurrency), errs)
 	errs = nextErrs
 	cfg.WorkerConcurrency = int(workerConcurrency)
@@ -69,6 +72,9 @@ func Load() (Config, error) {
 	}
 	if cfg.DatabaseMinConns < 0 || cfg.DatabaseMinConns > cfg.DatabaseMaxConns {
 		errs = append(errs, errors.New("VIGIL_DATABASE_MIN_CONNS must be between 0 and VIGIL_DATABASE_MAX_CONNS"))
+	}
+	if cfg.CheckResultRetentionDays < 1 || cfg.CheckResultRetentionDays > 3650 {
+		errs = append(errs, errors.New("VIGIL_CHECK_RESULT_RETENTION_DAYS must be between 1 and 3650"))
 	}
 	if cfg.WorkerHTTPAddr == "" {
 		errs = append(errs, errors.New("VIGIL_WORKER_HTTP_ADDR must not be empty"))

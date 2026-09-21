@@ -4,13 +4,14 @@ Vigil runs as two independent Compose projects behind the existing Docker-based 
 
 ## Topology and prerequisites
 
-Install Docker Engine with Compose v2, Nginx, Certbot, and an `htpasswd` implementation. DNS for `vigil.boniluan.com` and `grafana.boniluan.com` must point at the VPS. `status.boniluan.com` remains reserved.
+Install Docker Engine with Compose v2, Nginx, Certbot, and an `htpasswd` implementation. DNS for `vigil.boniluan.com` and `grafana.boniluan.com` must point at the VPS. `status.boniluan.com` serves a sanitized public status page. Its certificate must include that hostname.
 
 The existing Docker edge proxy reaches stable service aliases on the external `web-proxy` network. Loopback bindings remain available for host-only diagnostics:
 
 ```text
 vigil.boniluan.com   -> edge proxy -> vigil-api:8080
 grafana.boniluan.com -> edge proxy -> grafana:3000
+status.boniluan.com  -> edge proxy -> public status route only
 ```
 
 PostgreSQL exists only on Vigil's internal `app` network. Prometheus, the Vigil operational listeners, Node Exporter, and cAdvisor communicate over the external `vigil-monitoring` network and publish no host ports. Only API and Grafana also join the existing external `web-proxy` network.
@@ -66,11 +67,11 @@ Node Exporter receives read-only views of host `/proc`, `/sys`, and `/`. cAdviso
 
 ## Nginx, HTTPS, and Basic Auth
 
-`deploy/nginx/edge.override.yaml` extends the existing edge Compose project without modifying it. It mounts `deploy/nginx/vigil.conf` read-only at `/etc/nginx/conf.d/vigil.conf` and `/home/luan/.config/vigil/htpasswd` at `/etc/nginx/.htpasswd-vigil`. Obtain or expand the shared `boniluan.com` certificate through its Certbot container, then validate and reload the edge proxy:
-The certificate must include `boniluan.com`, `www.boniluan.com`, `finpulse.boniluan.com`, `sitio.boniluan.com`, `vigil.boniluan.com`, and `grafana.boniluan.com`; the existing Certbot renewal container then renews that lineage automatically.
+`deploy/nginx/edge.override.yaml` mounts Vigil's routing into the shared edge project. Keep the shared BoniLuan edge configuration in sync so future home-site rebuilds retain the Grafana and status virtual hosts. It mounts `deploy/nginx/vigil.conf` read-only at `/etc/nginx/conf.d/vigil.conf` and `/home/luan/.config/vigil/htpasswd` at `/etc/nginx/.htpasswd-vigil`. Obtain or expand the shared `boniluan.com` certificate through its Certbot container, then validate and reload the edge proxy:
+The certificate must include `boniluan.com`, `www.boniluan.com`, `finpulse.boniluan.com`, `lume.boniluan.com`, `sitio.boniluan.com`, `vigil.boniluan.com`, `grafana.boniluan.com`, and `status.boniluan.com`; the existing Certbot renewal container then renews that lineage automatically.
 
 ```bash
-docker exec boniluan-certbot certbot certonly --webroot --webroot-path /var/www/certbot --cert-name boniluan.com --expand --non-interactive --agree-tos -d boniluan.com -d www.boniluan.com -d finpulse.boniluan.com -d sitio.boniluan.com -d vigil.boniluan.com -d grafana.boniluan.com
+docker exec boniluan-certbot certbot certonly --webroot --webroot-path /var/www/certbot --cert-name boniluan.com --expand --non-interactive --agree-tos -d boniluan.com -d www.boniluan.com -d finpulse.boniluan.com -d lume.boniluan.com -d sitio.boniluan.com -d vigil.boniluan.com -d grafana.boniluan.com -d status.boniluan.com
 ```
 
 ```bash
@@ -113,15 +114,15 @@ docker exec -i vigil-postgres-1 pg_restore --list < /path/to/the/new.dump
 
 Copy backups encrypted off the VPS. A backup is not verified by archive listing alone: periodically restore it into a disposable PostgreSQL container, compare the migration version and table counts to the backup-time snapshot, then stop the container. Never restore a test archive over production. The temporary restore container can use `--network none`, ephemeral data, and a read-only backup mount. Counts against live production may increase while the worker continues checking endpoints.
 
-## Retention status
+## Retention
 
-Prometheus is configured with 30-day retention. The `check_results` 90-day policy is documented in ADR 0006 and indexed by `started_at`, but automatic PostgreSQL pruning is not implemented yet. Zero over-age rows do not prove an enforced policy. Check the backlog without changing data:
+Prometheus keeps 30 days of metrics. The worker deletes `check_results` older than `VIGIL_CHECK_RESULT_RETENTION_DAYS` (default 90) in bounded batches at startup and hourly. Completed or skipped execution rows without results are removed after the same period. Pending/claimed work, monitor configuration, and current state remain. Cleanup failures are logged and retried. Check the backlog without changing data:
 
 ```bash
 docker exec vigil-postgres-1 psql -U vigil -d vigil -Atc "SELECT count(*) FROM check_results WHERE started_at < now() - interval '90 days';"
 ```
 
-Before data reaches 90 days, implement and test bounded cleanup of results and their completed execution ledger. Preserve monitor configuration and indefinite incident history; do not use an ad-hoc bulk delete in production.
+Back up PostgreSQL before reducing retention. Large backlogs may require several hourly passes. No table partitioning is used in v0.1.
 
 ## Operations and troubleshooting
 
@@ -141,6 +142,6 @@ docker compose --env-file /home/luan/.config/vigil/observability.env -f deploy/o
 
 The public project page is `https://vigil.boniluan.com/`. The private service-monitoring dashboard is `https://vigil.boniluan.com/monitors`; browser Basic Auth username is `vigil-admin`, and its password is stored at `/home/luan/.config/vigil/admin.password` (mode 0600). The related Nginx password hash is `/home/luan/.config/vigil/htpasswd`; it is not the plaintext password.
 
-Infrastructure and application metrics dashboards are at `https://grafana.boniluan.com/`. Grafana has a separate login: username is configured as `GRAFANA_ADMIN_USER` (currently `admin`) and the password is stored at `/home/luan/.config/vigil/grafana.password` (mode 0600). Its environment file is `/home/luan/.config/vigil/observability.env`. Do not paste these credentials into tickets, chats, or the repository. The public project page and Grafana login are different from the private Vigil monitor administration view.
+Infrastructure and application metrics dashboards are at `https://grafana.boniluan.com/`. Grafana has a separate login: username is configured as `GRAFANA_ADMIN_USER` (currently `admin`) and the password is stored at `/home/luan/.config/vigil/grafana.password` (mode 0600). Its environment file is `/home/luan/.config/vigil/observability.env`. Do not paste these credentials into tickets, chats, or the repository. The public project page, public status page, and Grafana login are different from the private Vigil monitor administration view. See [USER_GUIDE.md](USER_GUIDE.md) for what each page shows.
 
 For a down scrape target, verify both projects join `vigil-monitoring`. cAdvisor failures commonly mean `/dev/kmsg`, cgroups, or the Docker data root differs on that host. The API and worker use read-only root filesystems, dropped capabilities, and no-new-privileges. Only the checker needs outbound access; controlled explicit-IP dialing and SSRF policy remain unchanged.
