@@ -17,6 +17,7 @@ import (
 	monitorapi "github.com/BoniLuan/vigil/internal/monitor/httpapi"
 	"github.com/BoniLuan/vigil/internal/platform/config"
 	"github.com/BoniLuan/vigil/internal/platform/database"
+	"github.com/BoniLuan/vigil/internal/publicstatus"
 )
 
 func API(ctx context.Context, cfg config.Config, build BuildInfo, logger *slog.Logger) error {
@@ -38,6 +39,7 @@ func API(ctx context.Context, cfg config.Config, build BuildInfo, logger *slog.L
 		return fmt.Errorf("initialize admin UI: %w", err)
 	}
 	admin.Register(mux)
+	publicstatus.New(pool, logger).Register(mux)
 	metrics := appmetrics.New(pool, appmetrics.BuildInfo{Version: build.Version, Commit: build.Commit, Role: "api"})
 	mux.Handle("GET /metrics", metrics.Handler())
 	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, _ *http.Request) {

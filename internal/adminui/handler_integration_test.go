@@ -31,6 +31,7 @@ func TestAdminMonitorLifecycleAndHistory(t *testing.T) {
 
 	response := request(t, mux, http.MethodGet, "/monitors", nil)
 	assertResponse(t, response, http.StatusOK, "No monitors configured")
+	assertResponse(t, response, http.StatusOK, "Current monitor counts")
 
 	invalid := validForm()
 	invalid.Set("name", "")
@@ -138,6 +139,8 @@ func TestAdminListRendersOperationalProjectionWithoutQueryString(t *testing.T) {
 	handler.Register(mux)
 	response := request(t, mux, http.MethodGet, "/monitors", nil)
 	assertResponse(t, response, http.StatusOK, "Projected")
+	assertResponse(t, response, http.StatusOK, "/monitors/"+created.ID.String()+"/edit")
+	assertResponse(t, response, http.StatusOK, "Details")
 	assertResponse(t, response, http.StatusOK, "state-down")
 	assertResponse(t, response, http.StatusOK, "http_failure")
 	assertResponse(t, response, http.StatusOK, "10 ms")

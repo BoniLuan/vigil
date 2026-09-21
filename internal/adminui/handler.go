@@ -39,6 +39,7 @@ type page struct {
 	Errors    map[string]string
 	Action    string
 	IsEdit    bool
+	Overview  overview
 }
 
 type formValues struct {
@@ -46,6 +47,27 @@ type formValues struct {
 	StatusMin, StatusMax, IntervalSeconds, TimeoutMS string
 	FailureThreshold, RecoveryThreshold              string
 	Public                                           bool
+}
+
+type overview struct {
+	Total, Up, Down, Pending, Paused int
+}
+
+func summarize(monitors []monitor.Monitor) overview {
+	result := overview{Total: len(monitors)}
+	for _, item := range monitors {
+		switch item.State {
+		case monitor.StateUp:
+			result.Up++
+		case monitor.StateDown:
+			result.Down++
+		case monitor.StatePending:
+			result.Pending++
+		case monitor.StatePaused:
+			result.Paused++
+		}
+	}
+	return result
 }
 
 func New(monitors *monitor.Service, results *checkresult.Service, logger *slog.Logger) (*Handler, error) {
@@ -89,7 +111,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 		h.internal(w, "list monitors", err)
 		return
 	}
-	h.render(w, "list", page{Title: "Monitors", Monitors: values})
+	h.render(w, "list", page{Title: "Monitors", Monitors: values, Overview: summarize(values)})
 }
 
 func (h *Handler) detail(w http.ResponseWriter, r *http.Request) {

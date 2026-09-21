@@ -1,19 +1,18 @@
 # Vigil
 
-Vigil is a planned self-hosted monitoring and observability platform for a
-single Linux VPS. It will actively check websites, APIs, and health endpoints,
-track their availability and latency, manage incidents, and publish a focused
-service-status experience. A standard Prometheus and Grafana stack will provide
-host and container observability alongside it.
+Vigil is a self-hosted monitoring and observability platform running on a
+single Linux VPS. It checks websites, APIs, and health endpoints, tracks their
+availability and latency, and publishes a deliberately limited public status
+page. Incidents and notifications are planned for v0.2. A separate Prometheus and Grafana stack provides host and container observability.
 
-Vigil now has an end-to-end v0.1 monitoring path: durable PostgreSQL scheduling,
+Vigil has an end-to-end v0.1 monitoring path: durable PostgreSQL scheduling,
 a bounded worker runtime, the security-hardened HTTP checker, atomic history and
 current-state projection, and monitor administration APIs.
 
-## Planned shape
+## Architecture
 
 - Go modular monolith, exposed as separate API and worker processes
-- PostgreSQL for configuration, check history, incidents, and delivery state
+- PostgreSQL for configuration and check history; incidents and delivery state are planned
 - Server-rendered administration and public status pages backed by a REST API
 - Prometheus, Grafana, Node Exporter, and cAdvisor for engineering observability
 - Docker Compose deployment behind an existing Nginx HTTPS reverse proxy
@@ -26,6 +25,7 @@ current-state projection, and monitor administration APIs.
 - [Worker runtime and lifecycle](docs/WORKER.md)
 - [Application metrics](docs/OBSERVABILITY.md)
 - [Single-VPS deployment runbook](docs/DEPLOYMENT.md)
+- [Pages, access, and monitoring data flow](docs/USER_GUIDE.md)
 
 ## Foundation commands
 
@@ -45,6 +45,7 @@ With the API running:
 
 ```text
 Public project page: http://localhost:8080/
+Public status page: http://localhost:8080/public/status
 Admin UI:           http://localhost:8080/monitors
 Metrics:   http://localhost:8080/metrics
 Liveness:  http://localhost:8080/livez
