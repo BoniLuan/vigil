@@ -26,6 +26,7 @@ jobs:
           --health-retries 10
     env:
       VIGIL_TEST_DATABASE_URL: postgres://vigil:vigil_test_only@localhost:5432/vigil_test?sslmode=disable
+      VIGIL_DATABASE_URL: postgres://vigil:vigil_test_only@localhost:5432/vigil_test?sslmode=disable
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -38,6 +39,8 @@ jobs:
         run: |
           go mod tidy
           git diff --exit-code -- go.mod go.sum
+      - name: Apply migrations to isolated test database
+        run: go run ./cmd/vigil migrate up
       - name: Unit and PostgreSQL integration tests
         run: go test -count=1 ./...
       - name: Race detector
