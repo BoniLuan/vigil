@@ -16,30 +16,37 @@ import (
 
 	"github.com/BoniLuan/vigil/internal/checkresult"
 	"github.com/BoniLuan/vigil/internal/monitor"
+	"github.com/BoniLuan/vigil/internal/publicstatus"
 	"github.com/google/uuid"
 )
 
 //go:embed templates/*.html assets/*.css assets/*.svg
 var files embed.FS
 
+type publicStatusReader interface {
+	Snapshot(context.Context) (publicstatus.Snapshot, error)
+}
+
 type Handler struct {
-	monitors  *monitor.Service
-	results   *checkresult.Service
-	logger    *slog.Logger
-	templates map[string]*template.Template
+	monitors     *monitor.Service
+	results      *checkresult.Service
+	logger       *slog.Logger
+	publicStatus publicStatusReader
+	templates    map[string]*template.Template
 }
 
 type page struct {
-	Title     string
-	Monitors  []monitor.Monitor
-	Monitor   monitor.Monitor
-	Results   []checkresult.StoredResult
-	Summaries []checkresult.Summary
-	Form      formValues
-	Errors    map[string]string
-	Action    string
-	IsEdit    bool
-	Overview  overview
+	Title        string
+	Monitors     []monitor.Monitor
+	Monitor      monitor.Monitor
+	Results      []checkresult.StoredResult
+	Summaries    []checkresult.Summary
+	Form         formValues
+	Errors       map[string]string
+	Action       string
+	IsEdit       bool
+	Overview     overview
+	PublicStatus publicstatus.Snapshot
 }
 
 type formValues struct {
@@ -70,7 +77,7 @@ func summarize(monitors []monitor.Monitor) overview {
 	return result
 }
 
-func New(monitors *monitor.Service, results *checkresult.Service, logger *slog.Logger) (*Handler, error) {
+func New(monitors *monitor.Service, results *checkresult.Service, status publicStatusReader, logger *slog.Logger) (*Handler, error) {
 	functions := template.FuncMap{
 		"timefmt": timeFormat, "duration": durationFormat, "percent": percentFormat,
 		"hostname": hostname, "safeurl": safeURL, "errorcode": errorCode,
@@ -83,7 +90,7 @@ func New(monitors *monitor.Service, results *checkresult.Service, logger *slog.L
 		}
 		templates[name] = parsed
 	}
-	return &Handler{monitors: monitors, results: results, logger: logger, templates: templates}, nil
+	return &Handler{monitors: monitors, results: results, publicStatus: status, logger: logger, templates: templates}, nil
 }
 
 func (h *Handler) Register(mux *http.ServeMux) {
@@ -101,8 +108,19 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /monitors/{id}/archive", h.archive)
 }
 
-func (h *Handler) landing(w http.ResponseWriter, _ *http.Request) {
-	h.render(w, "landing", page{Title: "Vigil — Monitoring with operational clarity"})
+func (h *Handler) landing(w http.ResponseWriter, r *http.Request) {
+	status := publicstatus.Snapshot{}
+	var err error
+	if h.publicStatus != nil {
+		status, err = h.publicStatus.Snapshot(r.Context())
+	}
+	if err != nil {
+		h.logger.Warn("load landing status preview", "error", err)
+	}
+	if len(status.Services) > 5 {
+		status.Services = status.Services[:5]
+	}
+	h.render(w, "landing", page{Title: "Vigil — Monitoring with operational clarity", PublicStatus: status})
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {

@@ -18,7 +18,7 @@ func requestAsset(t *testing.T, mux *http.ServeMux, path string) *httptest.Respo
 }
 
 func TestLandingPageAndAssets(t *testing.T) {
-	handler, err := New(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler, err := New(nil, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,8 +32,9 @@ func TestLandingPageAndAssets(t *testing.T) {
 		t.Fatalf("landing status = %d", response.Code)
 	}
 	for _, expected := range []string{
-		"Know when your services need attention.",
-		"Illustrative preview",
+		"Operational clarity,",
+		"Live public service health preview",
+		"View live status",
 		"https://github.com/BoniLuan/vigil",
 		"Operator login",
 		"/assets/favicon.svg",

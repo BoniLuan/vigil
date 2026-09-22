@@ -14,6 +14,7 @@ import (
 	"github.com/BoniLuan/vigil/internal/check"
 	"github.com/BoniLuan/vigil/internal/checkresult"
 	"github.com/BoniLuan/vigil/internal/monitor"
+	"github.com/BoniLuan/vigil/internal/publicstatus"
 	"github.com/BoniLuan/vigil/internal/testutil"
 	"github.com/google/uuid"
 )
@@ -22,7 +23,7 @@ func TestAdminMonitorLifecycleAndHistory(t *testing.T) {
 	pool := testutil.PostgreSQL(t)
 	monitorService := monitor.NewService(monitor.NewStore(pool))
 	resultService := checkresult.NewService(pool)
-	handler, err := New(monitorService, resultService, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler, err := New(monitorService, resultService, publicstatus.NewReader(pool), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +135,7 @@ func TestAdminListRendersOperationalProjectionWithoutQueryString(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, _ := New(monitorService, checkresult.NewService(pool), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler, _ := New(monitorService, checkresult.NewService(pool), publicstatus.NewReader(pool), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	mux := http.NewServeMux()
 	handler.Register(mux)
 	response := request(t, mux, http.MethodGet, "/monitors", nil)
@@ -170,5 +171,38 @@ func assertResponse(t *testing.T, response *httptest.ResponseRecorder, status in
 	t.Helper()
 	if response.Code != status || !strings.Contains(response.Body.String(), text) {
 		t.Fatalf("status=%d want=%d missing=%q body=%s", response.Code, status, text, response.Body.String())
+	}
+}
+
+func TestLandingUsesSanitizedLivePublicStatus(t *testing.T) {
+	pool := testutil.PostgreSQL(t)
+	ctx := context.Background()
+	monitorService := monitor.NewService(monitor.NewStore(pool))
+	publicMonitor, err := monitorService.Create(ctx, monitor.CreateInput{Name: "Public API", URL: "https://public.example/health?token=landing-public-secret", Public: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	privateMonitor, err := monitorService.Create(ctx, monitor.CreateInput{Name: "Private API", URL: "https://private.example/health?token=landing-private-secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	status := 200
+	if _, _, err := checkresult.NewService(pool).ApplyResult(ctx, check.Result{MonitorID: publicMonitor.ID, StartedAt: now.Add(-25 * time.Millisecond), FinishedAt: now, Duration: 25 * time.Millisecond, Outcome: check.OutcomeSuccess, StatusCode: &status}); err != nil {
+		t.Fatal(err)
+	}
+	handler, err := New(monitorService, checkresult.NewService(pool), publicstatus.NewReader(pool), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	handler.Register(mux)
+	response := request(t, mux, http.MethodGet, "/", nil)
+	assertResponse(t, response, http.StatusOK, "Public API")
+	assertResponse(t, response, http.StatusOK, "100.00%")
+	for _, forbidden := range []string{"Private API", "public.example", "private.example", "landing-public-secret", "landing-private-secret", publicMonitor.ID.String(), privateMonitor.ID.String()} {
+		if strings.Contains(response.Body.String(), forbidden) {
+			t.Fatalf("landing page leaked %q", forbidden)
+		}
 	}
 }

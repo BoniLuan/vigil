@@ -4,7 +4,7 @@ Vigil has three different views:
 
 | Address | Audience | What it shows |
 | --- | --- | --- |
-| `vigil.boniluan.com/` | Public | Project overview; its illustrated dashboard is **not live data**. |
+| `vigil.boniluan.com/` | Public | Project overview plus a sanitized live preview of explicitly public services. |
 | `vigil.boniluan.com/monitors` | Operator (Nginx Basic Auth) | Live monitor list, status counts, Details/Edit actions, and monitor creation. |
 | `status.boniluan.com/` | Public | Only monitors explicitly marked **Public**: name, current state, last check, and 24-hour uptime. |
 | `grafana.boniluan.com/` | Operator (Grafana login) | VPS, Docker, and Vigil process metrics from Prometheus. |

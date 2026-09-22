@@ -2,6 +2,7 @@
 package publicstatus
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"time"
@@ -10,42 +11,33 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type Handler struct {
-	queries *generated.Queries
-	logger  *slog.Logger
-}
-
-type service struct {
+type Service struct {
 	Name        string
 	State       string
 	LastChecked string
 	Uptime      string
 }
 
-type page struct {
-	Services       []service
+type Snapshot struct {
+	Services       []Service
 	Updated        string
 	AllOperational bool
+	Total          int
+	Operational    int
 }
 
-func New(pool *pgxpool.Pool, logger *slog.Logger) *Handler {
-	return &Handler{queries: generated.New(pool), logger: logger}
-}
+type Reader struct{ queries *generated.Queries }
 
-func (h *Handler) Register(mux *http.ServeMux) {
-	mux.HandleFunc("GET /public/status", h.serve)
-}
+func NewReader(pool *pgxpool.Pool) *Reader { return &Reader{queries: generated.New(pool)} }
 
-func (h *Handler) serve(w http.ResponseWriter, r *http.Request) {
-	rows, err := h.queries.ListPublicStatus(r.Context())
+func (r *Reader) Snapshot(ctx context.Context) (Snapshot, error) {
+	rows, err := r.queries.ListPublicStatus(ctx)
 	if err != nil {
-		h.logger.Error("load public status", "error", err)
-		http.Error(w, "Status is temporarily unavailable", http.StatusServiceUnavailable)
-		return
+		return Snapshot{}, err
 	}
-	data := page{Updated: time.Now().UTC().Format("2006-01-02 15:04 UTC"), AllOperational: len(rows) > 0}
+	data := Snapshot{Updated: time.Now().UTC().Format("2006-01-02 15:04 UTC"), AllOperational: len(rows) > 0}
 	for _, row := range rows {
-		entry := service{Name: row.Name, State: row.State, LastChecked: "Awaiting first check", Uptime: "N/A"}
+		entry := Service{Name: row.Name, State: row.State, LastChecked: "Awaiting first check", Uptime: "N/A"}
 		if row.LastCheckedAt.Valid {
 			entry.LastChecked = row.LastCheckedAt.Time.UTC().Format("2006-01-02 15:04 UTC")
 		}
@@ -55,7 +47,34 @@ func (h *Handler) serve(w http.ResponseWriter, r *http.Request) {
 		if row.State != "up" {
 			data.AllOperational = false
 		}
+		if row.State == "up" {
+			data.Operational++
+		}
 		data.Services = append(data.Services, entry)
+		data.Total++
+	}
+	return data, nil
+}
+
+type Handler struct {
+	reader *Reader
+	logger *slog.Logger
+}
+
+func New(pool *pgxpool.Pool, logger *slog.Logger) *Handler {
+	return &Handler{reader: NewReader(pool), logger: logger}
+}
+
+func (h *Handler) Register(mux *http.ServeMux) {
+	mux.HandleFunc("GET /public/status", h.serve)
+}
+
+func (h *Handler) serve(w http.ResponseWriter, r *http.Request) {
+	data, err := h.reader.Snapshot(r.Context())
+	if err != nil {
+		h.logger.Error("load public status", "error", err)
+		http.Error(w, "Status is temporarily unavailable", http.StatusServiceUnavailable)
+		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")

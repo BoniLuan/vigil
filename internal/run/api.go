@@ -34,7 +34,7 @@ func API(ctx context.Context, cfg config.Config, build BuildInfo, logger *slog.L
 	monitorapi.New(monitorService, logger).Register(mux)
 	resultService := checkresult.NewService(pool)
 	checkresultapi.New(resultService, logger).Register(mux)
-	admin, err := adminui.New(monitorService, resultService, logger)
+	admin, err := adminui.New(monitorService, resultService, publicstatus.NewReader(pool), logger)
 	if err != nil {
 		return fmt.Errorf("initialize admin UI: %w", err)
 	}

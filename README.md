@@ -3,7 +3,7 @@
 Vigil is a self-hosted monitoring and observability platform running on a
 single Linux VPS. It checks websites, APIs, and health endpoints, tracks their
 availability and latency, and publishes a deliberately limited public status
-page. Incidents and notifications are planned for v0.2. A separate Prometheus and Grafana stack provides host and container observability.
+page and live landing-page preview. Incidents and notifications are planned for v0.2. A separate Prometheus and Grafana stack provides host and container observability.
 
 Vigil has an end-to-end v0.1 monitoring path: durable PostgreSQL scheduling,
 a bounded worker runtime, the security-hardened HTTP checker, atomic history and
