@@ -38,6 +38,7 @@ func TestLandingPageAndAssets(t *testing.T) {
 		"https://github.com/BoniLuan/vigil",
 		"Operator login",
 		"/assets/favicon.svg",
+		"/assets/landing.css?v=20260922b",
 	} {
 		if !strings.Contains(response.Body.String(), expected) {
 			t.Errorf("landing response does not contain %q", expected)

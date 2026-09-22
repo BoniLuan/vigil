@@ -33,6 +33,7 @@ func TestAdminMonitorLifecycleAndHistory(t *testing.T) {
 	response := request(t, mux, http.MethodGet, "/monitors", nil)
 	assertResponse(t, response, http.StatusOK, "No monitors configured")
 	assertResponse(t, response, http.StatusOK, "Current monitor counts")
+	assertResponse(t, response, http.StatusOK, "/assets/app.css?v=20260922b")
 
 	invalid := validForm()
 	invalid.Set("name", "")

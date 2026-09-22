@@ -20,11 +20,11 @@ func TestPublicStatusFiltersPrivateAndArchivedConfiguration(t *testing.T) {
 	pool := testutil.PostgreSQL(t)
 	ctx := context.Background()
 	monitors := monitor.NewService(monitor.NewStore(pool))
-	private, err := monitors.Create(ctx, monitor.CreateInput{Name: "Secret service", URL: "https://private.example/health?token=supersecret"})
+	private, err := monitors.Create(ctx, monitor.CreateInput{Name: "Secret service", URL: "https://private.example/health?token=status-private-secret"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	public, err := monitors.Create(ctx, monitor.CreateInput{Name: "Public service", URL: "https://public.example/health?token=hidden", Public: true})
+	public, err := monitors.Create(ctx, monitor.CreateInput{Name: "Public service", URL: "https://public.example/health?token=status-public-secret", Public: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestPublicStatusFiltersPrivateAndArchivedConfiguration(t *testing.T) {
 	if recorder.Code != http.StatusOK || !strings.Contains(body, "Public service") || !strings.Contains(body, "100.00%") {
 		t.Fatalf("status=%d body=%s", recorder.Code, body)
 	}
-	for _, forbidden := range []string{"Secret service", "Archived service", "private.example", "public.example", "hidden", "supersecret", private.ID.String(), public.ID.String(), "/monitors/", "Dialed IP"} {
+	for _, forbidden := range []string{"Secret service", "Archived service", "private.example", "public.example", "status-public-secret", "status-private-secret", private.ID.String(), public.ID.String(), "/monitors/", "Dialed IP"} {
 		if strings.Contains(body, forbidden) {
 			t.Fatalf("public response leaked %q", forbidden)
 		}
