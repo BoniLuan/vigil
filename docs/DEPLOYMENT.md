@@ -87,7 +87,7 @@ docker exec boniluan-home nginx -t
 docker exec boniluan-home nginx -s reload
 ```
 
-Ensure the Nginx worker can read that file. Vigil’s `/` portfolio landing page and `/assets/` are public; `/monitors`, `/api/v1`, and every other Vigil route inherit Basic Auth from the protected catch-all location. The landing-page dashboard is illustrative and does not query or expose production monitor data. Grafana uses its own authentication; anonymous access and signup are disabled. No reference route proxies metrics, exporters, Prometheus, or the worker listener.
+Ensure the Nginx worker can read that file. Vigil’s `/` portfolio landing page and `/assets/` are public; `/monitors`, `/api/v1`, and every other Vigil route inherit Basic Auth from the protected catch-all location. The landing preview reads the same sanitized projection as the public status page: public service name, state, last-check time, and 24-hour uptime only. It never exposes targets or private monitors. Grafana uses its own authentication; anonymous access and signup are disabled. No reference route proxies metrics, exporters, Prometheus, or the worker listener.
 
 ## Upgrade, rollback, and backup
 
@@ -103,16 +103,27 @@ docker compose --env-file /home/luan/.config/vigil/vigil.env -f deploy/vigil/com
 
 Rollback by restoring the previous immutable `VIGIL_IMAGE`. Migrations are forward-only: for an incompatible schema rollback, restore the pre-upgrade database backup before starting the old binary. Grafana dashboards and datasource provisioning are reproducible from Git.
 
-Create and validate a restrictive custom-format backup without modifying production:
+Install the repository-owned daily backup timer:
 
 ```bash
-mkdir -p /home/luan/.config/vigil/backups
-umask 077
-docker exec vigil-postgres-1 pg_dump --format=custom --no-owner --no-acl -U vigil -d vigil > /home/luan/.config/vigil/backups/vigil-$(date -u +%Y%m%dT%H%MZ).dump
-docker exec -i vigil-postgres-1 pg_restore --list < /path/to/the/new.dump
+sudo install -m 0644 deploy/backup/vigil-backup.service deploy/backup/vigil-backup.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now vigil-backup.timer
+sudo systemctl start vigil-backup.service
+systemctl status vigil-backup.timer vigil-backup.service
 ```
 
-Copy backups encrypted off the VPS. A backup is not verified by archive listing alone: periodically restore it into a disposable PostgreSQL container, compare the migration version and table counts to the backup-time snapshot, then stop the container. Never restore a test archive over production. The temporary restore container can use `--network none`, ephemeral data, and a read-only backup mount. Counts against live production may increase while the worker continues checking endpoints.
+The preferred system service creates a PostgreSQL custom-format archive at 03:15 daily, validates it with `pg_restore --list`, writes it with mode 0600, and retains 30 days locally. `Persistent=true` runs a missed backup after downtime. Inspect archives and logs with `ls -lh /home/luan/.config/vigil/backups` and `journalctl -u vigil-backup.service`.
+
+If administrator access is unavailable, install the same script in the operator account cron with overlap protection:
+
+```bash
+(crontab -l 2>/dev/null | grep -v "# vigil-database-backup$"; echo "15 3 * * * /usr/bin/flock -n /home/luan/.config/vigil/backup.lock /home/luan/projects/vigil/deploy/backup/vigil-backup.sh >> /home/luan/.config/vigil/backup.log 2>&1 # vigil-database-backup") | crontab -
+```
+
+Use either the systemd timer or cron, not both. This VPS currently uses the cron form because system-wide installation requires interactive sudo.
+
+Local automation is only the first layer. Copy archives encrypted to storage outside this VPS; otherwise a disk or VPS loss removes both the database and its backups. Periodically restore an archive into a disposable PostgreSQL instance and compare schema version and table counts. Never test restoration over production.
 
 ## Retention
 
