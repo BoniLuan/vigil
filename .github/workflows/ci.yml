@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:17.11-alpine
+        image: postgres:17.11-alpine@sha256:eee6c6e1b0894fa4fe0075eb054af9fd1cf39a35321c2d4110626cfe506411fb
         env:
           POSTGRES_USER: vigil
           POSTGRES_PASSWORD: vigil_test_only
@@ -65,6 +65,6 @@ jobs:
       - name: Validate observability Compose
         run: docker compose --env-file deploy/observability/.env.example -f deploy/observability/compose.yaml config --quiet
       - name: Validate Prometheus configuration
-        run: docker run --rm -v "$PWD/deploy/observability/prometheus:/etc/prometheus:ro" --entrypoint promtool prom/prometheus:v3.14.0 check config /etc/prometheus/prometheus.yml
+        run: docker run --rm -v "$PWD/deploy/observability/prometheus:/etc/prometheus:ro" --entrypoint promtool prom/prometheus:v3.15.1@sha256:fa3302279710be2f21a8301ec17a8b4f2301fd829bd113839b3b6b02b6f191a2 check config /etc/prometheus/prometheus.yml
       - name: Validate provisioned dashboard JSON
         run: jq -e . deploy/observability/grafana/dashboards/*.json >/dev/null

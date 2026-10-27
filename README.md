@@ -83,3 +83,9 @@ PostgreSQL integration tests require an isolated database whose name ends in
 make test-db-create
 make test-integration
 ```
+
+## Security maintenance — 2026-10-23
+
+The binary is rebuilt with Go 1.27.3 and patched pgx/Go dependencies. PostgreSQL remains on 17.11. Monitoring targets are Prometheus 3.15.1, Grafana 13.2.4, cAdvisor 0.60.6 and Node Exporter 1.12.1; upstream images are pinned by OCI digest. Existing shared Relay/Lume monitoring overlays must stay active.
+
+VPS backup and recovery procedures: [shared VPS runbook](https://github.com/BoniLuan/boniluan/blob/main/ops/vps/README.md).

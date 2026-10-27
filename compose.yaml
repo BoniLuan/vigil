@@ -2,7 +2,7 @@ name: vigil-dev
 
 services:
   postgres:
-    image: postgres:17.11-alpine
+    image: postgres:17.11-alpine@sha256:eee6c6e1b0894fa4fe0075eb054af9fd1cf39a35321c2d4110626cfe506411fb
     environment:
       POSTGRES_DB: vigil
       POSTGRES_USER: vigil

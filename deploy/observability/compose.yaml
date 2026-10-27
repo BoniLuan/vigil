@@ -2,7 +2,7 @@ name: vigil-observability
 
 services:
   prometheus:
-    image: prom/prometheus:v3.14.0
+    image: prom/prometheus:v3.15.1@sha256:fa3302279710be2f21a8301ec17a8b4f2301fd829bd113839b3b6b02b6f191a2
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
@@ -14,6 +14,7 @@ services:
     networks:
       monitoring:
         aliases: [prometheus]
+      host-metrics: {}
     restart: unless-stopped
     read_only: true
     tmpfs:
@@ -22,7 +23,7 @@ services:
     security_opt: [no-new-privileges:true]
 
   grafana:
-    image: grafana/grafana:13.2.1
+    image: grafana/grafana:13.2.4@sha256:dbbc38ea21103cefb50396340cd88afec779c7e070b0a7bf5a75b4ce46651d3f
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:?set GRAFANA_ADMIN_USER}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD}
@@ -49,7 +50,7 @@ services:
     security_opt: [no-new-privileges:true]
 
   node-exporter:
-    image: prom/node-exporter:v1.12.1
+    image: prom/node-exporter:v1.12.1@sha256:1b4e4438faca4dd7e001dd445d161a4a2091b0fededa84093b3a8dfeae1f1be0
     command:
       - --path.procfs=/host/proc
       - --path.sysfs=/host/sys
@@ -71,7 +72,7 @@ services:
         bind:
           propagation: rslave
     networks:
-      monitoring:
+      host-metrics:
         aliases: [node-exporter]
     restart: unless-stopped
     read_only: true
@@ -80,7 +81,7 @@ services:
     security_opt: [no-new-privileges:true]
 
   cadvisor:
-    image: ghcr.io/google/cadvisor:v0.60.5
+    image: ghcr.io/google/cadvisor:v0.60.6@sha256:b8e7d1093144fd088f425ff003d75a4aa405de075db78dae3bc563730b1bd07a
     privileged: true
     command:
       - --docker_only=true
@@ -95,7 +96,7 @@ services:
     devices:
       - /dev/kmsg:/dev/kmsg
     networks:
-      monitoring:
+      host-metrics:
         aliases: [cadvisor]
     restart: unless-stopped
     read_only: true
@@ -109,6 +110,9 @@ volumes:
     name: vigil-grafana-data
 
 networks:
+  host-metrics:
+    name: vigil-host-metrics
+    internal: true
   monitoring:
     external: true
     name: vigil-monitoring
